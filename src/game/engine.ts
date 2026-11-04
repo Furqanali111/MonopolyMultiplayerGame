@@ -1499,6 +1499,8 @@ export function resolveTile(state: GameState, playerId: PlayerId): GameState {
 // TURN FLOW (shared by single player and the server)
 // ============================================================================
 
+const rollLine = (name: string, d: [number, number]) => `${name} rolled ${d[0]} + ${d[1]} = ${d[0] + d[1]}${isDoubles(d) ? ' (doubles)' : ''}`;
+
 /** Roll for the current player: doubles count, 3 doubles = jail, move, resolve, extra roll. */
 export function rollTurn(state: GameState, dice: [number, number]): GameState {
   const idx = state.currentPlayerIndex;
@@ -1510,6 +1512,7 @@ export function rollTurn(state: GameState, dice: [number, number]): GameState {
     ...state,
     lastDiceRoll: dice,
     players: state.players.map((p, i) => (i === idx ? { ...p, doublesCount } : p)),
+    gameLog: [...state.gameLog, rollLine(player.name, dice)],
   };
 
   if (doublesCount >= 3) {
@@ -1530,7 +1533,7 @@ export function rollTurn(state: GameState, dice: [number, number]): GameState {
 /** Roll attempt for the current player while in jail. */
 export function rollForJailTurn(state: GameState, dice: [number, number]): GameState {
   const player = state.players[state.currentPlayerIndex];
-  let s: GameState = { ...state, lastDiceRoll: dice };
+  let s: GameState = { ...state, lastDiceRoll: dice, gameLog: [...state.gameLog, rollLine(player.name, dice)] };
 
   if (isDoubles(dice)) {
     s = releaseFromJail(s, player.id, 'doubles');
