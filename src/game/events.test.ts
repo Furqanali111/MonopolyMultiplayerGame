@@ -23,3 +23,13 @@ describe('diffEvents', () => {
     expect(diffEvents(g, { ...g })).toEqual([]);
   });
 });
+
+describe('card events', () => {
+  it('reports a drawn card even though the card resolves in the same step', () => {
+    const g = initializeGame(2, 'easy');
+    g.players[0].position = 5; // 5 + 2 = 7 is a Chance tile
+    const next = rollTurn(g, [1, 1]);
+    expect(next.cardSeq).toBe(1);
+    expect(diffEvents(g, next).some(e => e.type === 'card')).toBe(true);
+  });
+});

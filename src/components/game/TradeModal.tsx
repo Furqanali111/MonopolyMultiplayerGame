@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { GameState, Player, PlayerId, TradeOffer } from '@/game/types';
 import { getPropertyData } from '@/game/engine';
-import { PropertyColor } from '@/game/constants';
+import { Money, Pawn, PROPERTY_HEX } from '@/components/game/kit';
+import { cn } from '@/lib/utils';
 
 interface TradeModalProps {
   open: boolean;
@@ -14,29 +16,46 @@ interface TradeModalProps {
   onPropose: (offer: Omit<TradeOffer, 'active'>) => void;
 }
 
-const PROPERTY_COLORS: Record<PropertyColor, string> = {
-  brown: 'bg-property-brown',
-  lightblue: 'bg-property-lightblue',
-  pink: 'bg-property-pink',
-  orange: 'bg-property-orange',
-  red: 'bg-property-red',
-  yellow: 'bg-property-yellow',
-  green: 'bg-property-green',
-  blue: 'bg-property-blue',
-  railroad: 'bg-property-railroad',
-  utility: 'bg-property-utility',
+const DeedToggle: React.FC<{ position: number; selected: boolean; onToggle: () => void }> = ({ position, selected, onToggle }) => {
+  const prop = getPropertyData(position);
+  if (!prop) return null;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={selected}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-[4px] border px-2 py-2 text-left text-[13px] transition-colors md:py-1.5',
+        selected ? 'border-gold bg-gold/10' : 'border-border hover:border-gold/40'
+      )}
+    >
+      <span className="h-4 w-1.5 shrink-0 rounded-[1px]" style={{ background: prop.color ? PROPERTY_HEX[prop.color] : '#6C7584' }} aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{prop.name}</span>
+      <span className="tabular-nums text-muted-foreground">${prop.price}</span>
+    </button>
+  );
 };
 
-export const TradeModal: React.FC<TradeModalProps> = ({
-  open,
-  onOpenChange,
-  gameState,
-  currentPlayer,
-  onPropose,
-}) => {
-  const { trade, players, ownedProperties } = gameState;
+const NumberField: React.FC<{ label: string; value: number; max: number; onChange: (n: number) => void }> = ({ label, value, max, onChange }) => (
+  <label className="flex items-center justify-between gap-3 text-[13px] text-muted-foreground">
+    {label}
+    <Input
+      type="number"
+      inputMode="numeric"
+      min={0}
+      max={max}
+      value={value || ''}
+      placeholder="0"
+      onChange={(e) => onChange(Math.min(Math.max(parseInt(e.target.value, 10) || 0, 0), max))}
+      className="h-10 w-28 text-right"
+    />
+  </label>
+);
 
-  const [selectedPartner, setSelectedPartner] = useState<PlayerId | null>(null);
+export const TradeModal: React.FC<TradeModalProps> = ({ open, onOpenChange, gameState, currentPlayer, onPropose }) => {
+  const { players, ownedProperties } = gameState;
+
+  const [partnerId, setPartnerId] = useState<PlayerId | null>(null);
   const [offeredProperties, setOfferedProperties] = useState<number[]>([]);
   const [requestedProperties, setRequestedProperties] = useState<number[]>([]);
   const [offeredMoney, setOfferedMoney] = useState(0);
@@ -44,36 +63,35 @@ export const TradeModal: React.FC<TradeModalProps> = ({
   const [offeredCards, setOfferedCards] = useState(0);
   const [requestedCards, setRequestedCards] = useState(0);
 
-  // Reset state when modal closes
+  const reset = () => {
+    setPartnerId(null);
+    setOfferedProperties([]);
+    setRequestedProperties([]);
+    setOfferedMoney(0);
+    setRequestedMoney(0);
+    setOfferedCards(0);
+    setRequestedCards(0);
+  };
+
   useEffect(() => {
-    if (!open) {
-      setSelectedPartner(null);
-      setOfferedProperties([]);
-      setRequestedProperties([]);
-      setOfferedMoney(0);
-      setRequestedMoney(0);
-      setOfferedCards(0);
-      setRequestedCards(0);
-    }
+    if (!open) reset();
   }, [open]);
 
-  // Trade modal is only for proposing trades, not accepting/declining
-  // (that's handled in GameScreen as a separate dialog)
+  const others = players.filter((p) => !p.isBankrupt && p.id !== currentPlayer.id);
+  const tradable = (ownerId: PlayerId) => ownedProperties.filter((p) => p.ownerId === ownerId && !p.isMortgaged && p.houses === 0);
+  const partner = partnerId ? players.find((p) => p.id === partnerId) : null;
 
-  // Trade proposal UI
-  const otherPlayers = players.filter(p => !p.isBankrupt && p.id !== currentPlayer.id);
-  const myProperties = ownedProperties.filter(p => p.ownerId === currentPlayer.id && !p.isMortgaged && p.houses === 0);
-  const partnerProperties = selectedPartner
-    ? ownedProperties.filter(p => p.ownerId === selectedPartner && !p.isMortgaged && p.houses === 0)
-    : [];
-  const selectedPartnerData = selectedPartner ? players.find(p => p.id === selectedPartner) : null;
+  const toggle = (list: number[], set: (v: number[]) => void, pos: number) =>
+    set(list.includes(pos) ? list.filter((p) => p !== pos) : [...list, pos]);
 
-  const handlePropose = () => {
-    if (selectedPartner === null) return;
+  const empty =
+    !offeredProperties.length && !requestedProperties.length && !offeredMoney && !requestedMoney && !offeredCards && !requestedCards;
 
+  const send = () => {
+    if (!partner) return;
     onPropose({
       fromPlayer: currentPlayer.id,
-      toPlayer: selectedPartner,
+      toPlayer: partner.id,
       offeredProperties,
       requestedProperties,
       offeredMoney,
@@ -83,194 +101,70 @@ export const TradeModal: React.FC<TradeModalProps> = ({
     });
   };
 
-  const toggleProperty = (position: number, isOffering: boolean) => {
-    if (isOffering) {
-      setOfferedProperties(prev =>
-        prev.includes(position)
-          ? prev.filter(p => p !== position)
-          : [...prev, position]
-      );
-    } else {
-      setRequestedProperties(prev =>
-        prev.includes(position)
-          ? prev.filter(p => p !== position)
-          : [...prev, position]
-      );
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-card border-border max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-display text-2xl gold-text text-center">
-            Propose Trade
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-2xl">
+        <DialogTitle className="text-lg font-semibold">{partner ? `Trade with ${partner.name}` : 'Who do you want to trade with?'}</DialogTitle>
+        <DialogDescription className="sr-only">Pick deeds and cash to give and to get, then send the offer.</DialogDescription>
 
-        {/* Partner selection */}
-        {!selectedPartner ? (
-          <div className="space-y-4">
-            <p className="text-muted-foreground text-center">Select a player to trade with:</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {otherPlayers.map(player => (
-                <Button
-                  key={player.id}
-                  variant="outline"
-                  onClick={() => setSelectedPartner(player.id)}
-                  className="flex items-center gap-2"
-                >
-                  <div
-                    className="w-4 h-4 rounded-full"
-                    style={{ backgroundColor: player.color }}
-                  />
-                  {player.name}
-                </Button>
-              ))}
-            </div>
-          </div>
+        {!partner ? (
+          <ul className="divide-y divide-border border border-border" style={{ borderRadius: 6 }}>
+            {others.map((p) => (
+              <li key={p.id}>
+                <button type="button" onClick={() => setPartnerId(p.id)} className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-raised">
+                  <Pawn color={p.color} name={p.name} size={30} />
+                  <span className="flex-1 font-medium">{p.name}</span>
+                  <span className="text-[13px] tabular-nums text-muted-foreground">
+                    ${p.money.toLocaleString()} · {tradable(p.id).length} tradable deed{tradable(p.id).length === 1 ? '' : 's'}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
         ) : (
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">
-                Trading with <span style={{ color: selectedPartnerData?.color }}>{selectedPartnerData?.name}</span>
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSelectedPartner(null);
-                  setOfferedProperties([]);
-                  setRequestedProperties([]);
-                }}
-              >
-                Change
-              </Button>
+            <div className="grid gap-4 md:grid-cols-2">
+              <section className="space-y-3">
+                <h3 className="flex items-center justify-between text-[13px] font-semibold text-muted-foreground">
+                  You give <Money value={currentPlayer.money} showDelta={false} className="font-medium text-foreground" />
+                </h3>
+                <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                  {tradable(currentPlayer.id).length === 0 && <p className="text-[13px] text-muted-foreground">No tradable deeds. Buildings and mortgages must be cleared first.</p>}
+                  {tradable(currentPlayer.id).map((o) => (
+                    <DeedToggle key={o.position} position={o.position} selected={offeredProperties.includes(o.position)} onToggle={() => toggle(offeredProperties, setOfferedProperties, o.position)} />
+                  ))}
+                </div>
+                <NumberField label="Cash" value={offeredMoney} max={currentPlayer.money} onChange={setOfferedMoney} />
+                {currentPlayer.getOutOfJailCards > 0 && <NumberField label="Jail cards" value={offeredCards} max={currentPlayer.getOutOfJailCards} onChange={setOfferedCards} />}
+              </section>
+
+              <section className="space-y-3">
+                <h3 className="flex items-center justify-between text-[13px] font-semibold text-muted-foreground">
+                  You get <Money value={partner.money} showDelta={false} className="font-medium text-foreground" />
+                </h3>
+                <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                  {tradable(partner.id).length === 0 && <p className="text-[13px] text-muted-foreground">{partner.name} has no tradable deeds.</p>}
+                  {tradable(partner.id).map((o) => (
+                    <DeedToggle key={o.position} position={o.position} selected={requestedProperties.includes(o.position)} onToggle={() => toggle(requestedProperties, setRequestedProperties, o.position)} />
+                  ))}
+                </div>
+                <NumberField label="Cash" value={requestedMoney} max={partner.money} onChange={setRequestedMoney} />
+                {partner.getOutOfJailCards > 0 && <NumberField label="Jail cards" value={requestedCards} max={partner.getOutOfJailCards} onChange={setRequestedCards} />}
+              </section>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              {/* Your offer */}
-              <div className="space-y-2">
-                <h4 className="font-semibold text-foreground">You Offer:</h4>
-
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Properties:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {myProperties.map(owned => {
-                      const prop = getPropertyData(owned.position);
-                      const isSelected = offeredProperties.includes(owned.position);
-                      return (
-                        <button
-                          key={owned.position}
-                          onClick={() => toggleProperty(owned.position, true)}
-                          className={`
-                            px-2 py-1 text-xs rounded transition-all
-                            ${isSelected
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-secondary/50 text-foreground hover:bg-secondary'}
-                          `}
-                        >
-                          {prop?.name.split(' ')[0]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Cash:</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={currentPlayer.money}
-                    value={offeredMoney}
-                    onChange={(e) => setOfferedMoney(Math.min(parseInt(e.target.value) || 0, currentPlayer.money))}
-                    className="h-8 w-24 text-sm"
-                  />
-                </div>
-
-                {currentPlayer.getOutOfJailCards > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Jail Cards:</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={currentPlayer.getOutOfJailCards}
-                      value={offeredCards}
-                      onChange={(e) => setOfferedCards(Math.min(parseInt(e.target.value) || 0, currentPlayer.getOutOfJailCards))}
-                      className="h-8 w-16 text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* You request */}
-              <div className="space-y-2">
-                <h4 className="font-semibold text-foreground">You Request:</h4>
-
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Properties:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {partnerProperties.map(owned => {
-                      const prop = getPropertyData(owned.position);
-                      const isSelected = requestedProperties.includes(owned.position);
-                      return (
-                        <button
-                          key={owned.position}
-                          onClick={() => toggleProperty(owned.position, false)}
-                          className={`
-                            px-2 py-1 text-xs rounded transition-all
-                            ${isSelected
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-secondary/50 text-foreground hover:bg-secondary'}
-                          `}
-                        >
-                          {prop?.name.split(' ')[0]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Cash:</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={selectedPartnerData?.money || 0}
-                    value={requestedMoney}
-                    onChange={(e) => setRequestedMoney(Math.min(parseInt(e.target.value) || 0, selectedPartnerData?.money || 0))}
-                    className="h-8 w-24 text-sm"
-                  />
-                </div>
-
-                {(selectedPartnerData?.getOutOfJailCards || 0) > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Jail Cards:</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={selectedPartnerData?.getOutOfJailCards || 0}
-                      value={requestedCards}
-                      onChange={(e) => setRequestedCards(Math.min(parseInt(e.target.value) || 0, selectedPartnerData?.getOutOfJailCards || 0))}
-                      className="h-8 w-16 text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-2 justify-center pt-4">
-              <Button
-                onClick={handlePropose}
-                disabled={offeredProperties.length === 0 && requestedProperties.length === 0 && offeredMoney === 0 && requestedMoney === 0 && offeredCards === 0 && requestedCards === 0}
-                className="btn-monopoly"
-              >
-                Propose Trade
+            <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="ghost" onClick={() => setPartnerId(null)}>
+                <ArrowLeft /> Change player
               </Button>
-              <Button onClick={() => onOpenChange(false)} variant="secondary">
-                Cancel
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" className="flex-1 sm:flex-none" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button className="flex-1 sm:flex-none" disabled={empty} onClick={send}>
+                  Send offer
+                </Button>
+              </div>
             </div>
           </div>
         )}

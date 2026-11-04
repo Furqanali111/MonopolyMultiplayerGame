@@ -1,4 +1,6 @@
 import React from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ArrowRightLeft, ChevronDown, Dices, Gavel, Hammer, KeyRound, Lock, Unlock, Undo2 } from 'lucide-react';
 import { GameState, Player } from '@/game/types';
 import {
   getPropertyData,
@@ -12,25 +14,20 @@ import {
 } from '@/game/engine';
 import { JAIL_FINE } from '@/game/constants';
 import { Button } from '@/components/ui/button';
-import {
-  ShoppingCart,
-  Gavel,
-  Home,
-  Building2,
-  ArrowRightLeft,
-  Key,
-  Dices,
-  DollarSign,
-  Minus,
-  Plus,
-  Lock,
-  Unlock,
-  SkipForward
-} from 'lucide-react';
+import ClickSpark from '@/components/ClickSpark';
+import { CountdownRing, PROPERTY_HEX, Pawn } from '@/components/game/kit';
+import { cn } from '@/lib/utils';
 
 interface ActionPanelProps {
   gameState: GameState;
+  /** The player whose turn it is */
   player: Player;
+  /** True when the person at this screen controls `player` */
+  canAct: boolean;
+  isRolling: boolean;
+  deadlineAt?: number | null;
+  deadlineTotal?: number;
+  onRoll: () => void;
   onBuyProperty: () => void;
   onDeclineProperty: () => void;
   onBuildHouse: (position: number) => void;
@@ -44,9 +41,18 @@ interface ActionPanelProps {
   onTrade: () => void;
 }
 
+const Primary: React.FC<React.ComponentProps<typeof Button>> = ({ className, ...props }) => (
+  <Button size="lg" className={cn('w-full', className)} {...props} />
+);
+
 export const ActionPanel: React.FC<ActionPanelProps> = ({
   gameState,
   player,
+  canAct,
+  isRolling,
+  deadlineAt,
+  deadlineTotal,
+  onRoll,
   onBuyProperty,
   onDeclineProperty,
   onBuildHouse,
@@ -59,256 +65,175 @@ export const ActionPanel: React.FC<ActionPanelProps> = ({
   onEndTurn,
   onTrade,
 }) => {
-  const currentTile = BOARD_TILES[player.position];
   const property = getPropertyData(player.position);
   const owned = getPropertyOwner(gameState, player.position);
+  const mine = gameState.ownedProperties.filter((p) => p.ownerId === player.id);
+  const phase = gameState.turnPhase;
 
-  // Get buildable properties
-  const playerProperties = gameState.ownedProperties.filter(p => p.ownerId === player.id);
-  const buildableProperties = playerProperties.filter(p => canBuildHouse(gameState, player.id, p.position));
-  const sellableHouses = playerProperties.filter(p => canSellHouse(gameState, player.id, p.position));
-  const mortgageableProperties = playerProperties.filter(p => canMortgage(gameState, player.id, p.position));
-  const unmortgageableProperties = playerProperties.filter(p => canUnmortgage(gameState, player.id, p.position));
+  // What the panel is asking of the player, as a heading plus the one primary action
+  let heading = '';
+  let detail: React.ReactNode = null;
+  let primary: React.ReactNode = null;
+  let secondary: React.ReactNode = null;
 
-  if (player.isAI) {
-    return (
-      <div className="glass-card p-6 text-center">
-        <div className="flex items-center justify-center gap-2 text-muted-foreground">
-          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="font-medium">{player.name} is thinking...</p>
-        </div>
-      </div>
+  if (!canAct) {
+    heading = gameState.phase === 'auction' ? 'Auction in progress' : `${player.name} is playing`;
+    detail = gameState.phase === 'auction' ? 'Bidding is open to everyone.' : phase === 'roll' ? 'Waiting for the roll.' : 'Waiting for their move.';
+  } else if (player.inJail) {
+    heading = 'You are in jail';
+    detail = `Attempt ${player.jailTurns + 1} of 3. Roll doubles to leave, or pay your way out.`;
+    primary = (
+      <Primary onClick={onRollForJail} disabled={isRolling}>
+        <Dices /> {isRolling ? 'Rolling…' : 'Roll for doubles'}
+      </Primary>
     );
-  }
-
-  // Jail actions - check if player is in jail
-  if (player.inJail) {
-    return (
-      <div className="glass-card p-4 space-y-4 animate-slide-up">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center">
-            <Lock className="w-5 h-5 text-destructive" />
-          </div>
-          <div>
-            <h3 className="font-display text-lg text-foreground">You're in Jail!</h3>
-            <p className="text-sm text-muted-foreground">
-              Attempt {player.jailTurns + 1} of 3 to roll doubles
-            </p>
-            <p className="text-xs text-muted-foreground">
-              After 3 failed attempts, you must pay the fine.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-2">
-          <Button
-            onClick={onRollForJail}
-            className="btn-primary w-full"
-          >
-            <Dices className="w-4 h-4 mr-2" />
-            Try to Roll Doubles
-          </Button>
-
-          {player.money >= JAIL_FINE && (
-            <Button
-              onClick={onPayJailFine}
-              variant="secondary"
-              className="w-full"
-            >
-              <DollarSign className="w-4 h-4 mr-2" />
-              Pay ${JAIL_FINE} Fine
-            </Button>
-          )}
-
-          {player.getOutOfJailCards > 0 && (
-            <Button
-              onClick={onUseJailCard}
-              variant="outline"
-              className="w-full"
-            >
-              <Key className="w-4 h-4 mr-2" />
-              Use Get Out of Jail Card
-            </Button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Property purchase decision
-  if (gameState.turnPhase === 'action' && property && !owned) {
-    const canBuy = canBuyProperty(gameState, player.id, player.position);
-
-    return (
-      <div className="glass-card p-4 space-y-4 animate-slide-up">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <h3 className="font-display text-lg text-foreground">{property.name}</h3>
-            <p className="text-sm text-muted-foreground">
-              Unowned • <span className="text-primary font-bold">${property.price}</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-2">
-          <Button
-            onClick={onBuyProperty}
-            disabled={!canBuy}
-            className="btn-primary w-full"
-          >
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            Buy Property
-          </Button>
-          <Button
-            onClick={onDeclineProperty}
-            variant="secondary"
-            className="w-full"
-          >
-            <Gavel className="w-4 h-4 mr-2" />
-            Start Auction
-          </Button>
-        </div>
-
-        {!canBuy && (
-          <p className="text-xs text-destructive text-center">
-            Not enough money to purchase
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  // End turn / property management
-  return (
-    <div className="glass-card p-4 space-y-4 animate-slide-up">
-      <div className="flex justify-between items-center">
-        <h3 className="font-display text-lg text-foreground">Actions</h3>
-        {gameState.turnPhase === 'endturn' && (
-          <Button onClick={onEndTurn} className="btn-primary">
-            <SkipForward className="w-4 h-4 mr-2" />
-            End Turn
+    secondary = (
+      <>
+        {player.money >= JAIL_FINE && (
+          <Button variant="secondary" onClick={onPayJailFine}>
+            Pay ${JAIL_FINE}
           </Button>
         )}
-      </div>
-
-      {/* Building options */}
-      {buildableProperties.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Plus className="w-4 h-4" />
-            Build Houses
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {buildableProperties.map(owned => {
-              const prop = getPropertyData(owned.position)!;
-              return (
-                <Button
-                  key={owned.position}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onBuildHouse(owned.position)}
-                  className="text-xs h-8"
-                >
-                  <Home className="w-3 h-3 mr-1" />
-                  {prop.name.split(' ')[0]} (${prop.houseCost})
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Sell houses */}
-      {sellableHouses.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Minus className="w-4 h-4" />
-            Sell Buildings
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {sellableHouses.map(owned => {
-              const prop = getPropertyData(owned.position)!;
-              return (
-                <Button
-                  key={owned.position}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onSellHouse(owned.position)}
-                  className="text-xs h-8"
-                >
-                  {prop.name.split(' ')[0]} (+${Math.floor(prop.houseCost! / 2)})
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Mortgage */}
-      {mortgageableProperties.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Lock className="w-4 h-4" />
-            Mortgage
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {mortgageableProperties.map(owned => {
-              const prop = getPropertyData(owned.position)!;
-              return (
-                <Button
-                  key={owned.position}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onMortgage(owned.position)}
-                  className="text-xs h-8"
-                >
-                  {prop.name.split(' ')[0]} (+${prop.mortgageValue})
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Unmortgage */}
-      {unmortgageableProperties.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Unlock className="w-4 h-4" />
-            Unmortgage
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {unmortgageableProperties.map(owned => {
-              const prop = getPropertyData(owned.position)!;
-              const cost = Math.floor(prop.mortgageValue * 1.1);
-              return (
-                <Button
-                  key={owned.position}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onUnmortgage(owned.position)}
-                  className="text-xs h-8"
-                >
-                  {prop.name.split(' ')[0]} (-${cost})
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Trade button */}
-      <Button
-        onClick={onTrade}
-        variant="outline"
-        className="w-full"
-      >
-        <ArrowRightLeft className="w-4 h-4 mr-2" />
-        Propose Trade
+        {player.getOutOfJailCards > 0 && (
+          <Button variant="secondary" onClick={onUseJailCard}>
+            <KeyRound /> Use card
+          </Button>
+        )}
+      </>
+    );
+  } else if (phase === 'roll') {
+    heading = 'Your turn';
+    detail = 'Roll the dice to move.';
+    primary = (
+      <Primary onClick={onRoll} disabled={isRolling}>
+        <Dices /> {isRolling ? 'Rolling…' : 'Roll dice'}
+      </Primary>
+    );
+  } else if (phase === 'action' && property && !owned) {
+    const affordable = canBuyProperty(gameState, player.id, player.position);
+    heading = property.name;
+    detail = affordable ? 'Unowned. Buy it, or put it up for auction.' : `Unowned. You need $${property.price - player.money} more to buy it.`;
+    primary = (
+      <Primary onClick={onBuyProperty} disabled={!affordable}>
+        Buy for ${property.price}
+      </Primary>
+    );
+    secondary = (
+      <Button variant="secondary" onClick={onDeclineProperty}>
+        <Gavel /> Auction
       </Button>
-    </div>
+    );
+  } else if (phase === 'endturn') {
+    heading = 'Wrap up your turn';
+    detail = 'Build, trade or manage deeds, then end your turn.';
+    primary = <Primary onClick={onEndTurn}>End turn</Primary>;
+  } else {
+    heading = BOARD_TILES[player.position].name;
+    detail = 'Resolving…';
+  }
+
+  return (
+    <section
+      aria-label="Your move"
+      className="sticky bottom-0 z-20 border border-border bg-card lg:static"
+      style={{ borderRadius: 6, paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      <div className="flex items-start gap-3 px-3.5 pt-3">
+        <Pawn color={player.color} name={player.name} size={30} />
+        <div className="min-w-0 flex-1">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={heading + String(canAct)}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <h2 className="truncate text-[15px] font-semibold leading-tight">{heading}</h2>
+              <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">{detail}</p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+        <CountdownRing at={deadlineAt ?? null} total={deadlineTotal} />
+      </div>
+
+      {canAct && (
+        // Buying a deed is the one moment that earns a flourish: a burst of gold chips. The burst lives on
+        // this container, which stays mounted while the button below it swaps to "End turn".
+        <ClickSpark
+          sparkColor={['#E3B341', '#FAD27C', '#F3EFE6']}
+          shape="dot"
+          sparkCount={12}
+          sparkSize={8}
+          sparkRadius={46}
+          duration={700}
+          disabled={!(phase === 'action' && !player.inJail && !!property && !owned)}
+          className="block"
+        >
+          <div className="space-y-2 px-3.5 pb-3 pt-3">
+            {primary}
+            <div className="flex flex-wrap gap-2 empty:hidden">
+              {secondary}
+              {phase === 'endturn' && !player.inJail && gameState.phase === 'playing' && (
+                <Button variant="secondary" onClick={onTrade}>
+                  <ArrowRightLeft /> Trade
+                </Button>
+              )}
+            </div>
+          </div>
+        </ClickSpark>
+      )}
+
+      {canAct && mine.length > 0 && gameState.phase === 'playing' && (
+        <details className="group border-t border-border">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3.5 text-[13px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            Manage deeds ({mine.length})
+            <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+          </summary>
+          <ul className="max-h-64 divide-y divide-border overflow-y-auto border-t border-border">
+            {mine.map((o) => {
+              const prop = getPropertyData(o.position)!;
+              const build = canBuildHouse(gameState, player.id, o.position);
+              const sell = canSellHouse(gameState, player.id, o.position);
+              const mortgage = canMortgage(gameState, player.id, o.position);
+              const unmortgage = canUnmortgage(gameState, player.id, o.position);
+              return (
+                <li key={o.position} className="flex items-center gap-2 px-3.5 py-2">
+                  <span className="h-6 w-1.5 shrink-0 rounded-[1px]" style={{ background: prop.color ? PROPERTY_HEX[prop.color] : '#6C7584' }} aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className={cn('truncate text-[13px] font-medium', o.isMortgaged && 'text-muted-foreground line-through')}>{prop.name}</p>
+                    <p className="text-[11px] tabular-nums text-muted-foreground">
+                      {o.houses === 5 ? 'Hotel' : o.houses > 0 ? `${o.houses} house${o.houses > 1 ? 's' : ''}` : o.isMortgaged ? 'Mortgaged' : 'No buildings'}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    {build && (
+                      <Button size="sm" variant="outline" onClick={() => onBuildHouse(o.position)} title={`Build for $${prop.houseCost}`}>
+                        <Hammer /> ${prop.houseCost}
+                      </Button>
+                    )}
+                    {sell && (
+                      <Button size="sm" variant="ghost" onClick={() => onSellHouse(o.position)} title={`Sell a building for $${Math.floor(prop.houseCost! / 2)}`}>
+                        <Undo2 /> ${Math.floor(prop.houseCost! / 2)}
+                      </Button>
+                    )}
+                    {mortgage && (
+                      <Button size="sm" variant="ghost" onClick={() => onMortgage(o.position)} title={`Mortgage for $${prop.mortgageValue}`}>
+                        <Lock /> ${prop.mortgageValue}
+                      </Button>
+                    )}
+                    {unmortgage && (
+                      <Button size="sm" variant="outline" onClick={() => onUnmortgage(o.position)} title="Pay to lift the mortgage">
+                        <Unlock /> ${Math.floor(prop.mortgageValue * 1.1)}
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
+    </section>
   );
 };

@@ -1,376 +1,287 @@
 import React, { useState, useEffect } from 'react';
-import {
-    Users,
-    Copy,
-    CheckCircle2,
-    LogOut,
-    Play,
-    User as UserIcon,
-    Crown,
-    Loader2,
-    ChevronRight,
-    ArrowLeft
-} from 'lucide-react';
+import { Bot, Check, Copy, Crown, Loader2, LogOut, Play, Plus, WifiOff, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Pawn } from '@/components/game/kit';
+import { Shell } from '@/components/screens/Shell';
 import {
-    createRoom,
-    joinRoom,
-    leaveRoom,
-    toggleReady,
-    startGame,
-    onRoomUpdated,
-    onPlayerJoined,
-    onPlayerLeft,
-    onRoomError,
-    onGameStarted,
-    onHostMigrated,
-    Room,
-    RoomPlayer,
-    removeListener
+  addBot,
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  onGameStarted,
+  onHostMigrated,
+  onPlayerJoined,
+  onPlayerLeft,
+  onRoomError,
+  onRoomUpdated,
+  removeBot,
+  removeListener,
+  Room,
+  setRules,
+  startGame,
+  toggleReady,
 } from '@/services/socket';
-import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 interface LobbyScreenProps {
-    currentUser: { id: string; username: string };
-    onBack: () => void;
-    onGameStarted: (gameState: any) => void;
-    initialRoom?: Room | null;
+  currentUser: { id: string; username: string };
+  onBack: () => void;
+  onGameStarted: (gameState: any) => void;
+  initialRoom?: Room | null;
 }
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({
-    currentUser,
-    onBack,
-    onGameStarted: handleGameStartedProp,
-    initialRoom = null
-}) => {
-    const [room, setRoom] = useState<Room | null>(initialRoom);
-    const [roomCodeInput, setRoomCodeInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [isCopied, setIsCopied] = useState(false);
-    const [view, setView] = useState<'selection' | 'waiting'>(initialRoom ? 'waiting' : 'selection');
+const MAX_SEATS = 6;
 
-    useEffect(() => {
-        console.log('🔧 LobbyScreen: Setting up event listeners');
+export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, onGameStarted: handleGameStartedProp, initialRoom = null }) => {
+  const [room, setRoom] = useState<Room | null>(initialRoom);
+  const [roomCodeInput, setRoomCodeInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
-        // Listen for room updates
-        onRoomUpdated((updatedRoom) => {
-            console.log('📝 Room updated:', updatedRoom);
-            setRoom(updatedRoom);
-        });
-
-        onPlayerJoined(({ player, room: updatedRoom }) => {
-            console.log('👋 Player joined:', player);
-            setRoom(updatedRoom);
-            toast.success(`${player.username} joined the room`);
-        });
-
-        onPlayerLeft(({ playerId, room: updatedRoom }) => {
-            console.log('👋 Player left:', playerId);
-            setRoom(updatedRoom);
-            toast.info(`A player left the room`);
-        });
-
-        onRoomError(({ message }) => {
-            console.log('❌ Room error:', message);
-            toast.error(message);
-            setIsLoading(false);
-        });
-
-        onGameStarted(({ gameState }) => {
-            console.log('🎮 LobbyScreen: Game started event received!', gameState);
-            console.log('🎮 Calling handleGameStartedProp with:', gameState);
-            handleGameStartedProp(gameState);
-        });
-
-        onHostMigrated(({ newHostName }) => toast.info(`${newHostName} is now the host`));
-
-        console.log('✅ LobbyScreen: All event listeners registered');
-
-        return () => {
-            console.log('🧹 LobbyScreen: Cleaning up listeners');
-        };
-    }, [handleGameStartedProp]);
-
-    const handleCreateRoom = async () => {
-        setIsLoading(true);
-        try {
-            const response = await createRoom();
-            setRoom(response.room);
-            setView('waiting');
-        } catch (error) {
-            toast.error('Failed to create room');
-        } finally {
-            setIsLoading(false);
-        }
+  useEffect(() => {
+    const updated = (r: Room) => setRoom(r);
+    const joined = ({ player, room: r }: { player: { username: string }; room: Room }) => {
+      setRoom(r);
+      toast.success(`${player.username} joined the room`);
     };
-
-    const handleJoinRoom = async (e?: React.FormEvent) => {
-        if (e) e.preventDefault();
-        if (!roomCodeInput.trim()) {
-            toast.error('Please enter a room code');
-            return;
-        }
-
-        setIsLoading(true);
-        try {
-            const response = await joinRoom(roomCodeInput.trim().toUpperCase());
-            if (response.success && response.room) {
-                setRoom(response.room);
-                setView('waiting');
-            } else {
-                toast.error(response.error || 'Failed to join room');
-            }
-        } catch (error) {
-            toast.error('Connection error. Please try again.');
-        } finally {
-            setIsLoading(false);
-        }
+    const left = ({ room: r }: { room: Room }) => {
+      setRoom(r);
+      toast.info('A player left the room');
     };
-
-    const handleLeaveRoom = async () => {
-        try {
-            await leaveRoom();
-            setRoom(null);
-            setView('selection');
-        } catch (error) {
-            toast.error('Error leaving room');
-        }
+    const failed = ({ message }: { message: string }) => {
+      toast.error(message);
+      setIsLoading(false);
     };
+    const started = ({ gameState }: { gameState: any }) => handleGameStartedProp(gameState);
+    const hosted = ({ newHostName }: { newHostName: string }) => toast.info(`${newHostName} is now the host`);
 
-    const handleToggleReady = () => {
-        if (!room) return;
-        const player = room.players.find(p => p.id === currentUser.id);
-        if (player) {
-            toggleReady(!player.isReady);
-        }
+    onRoomUpdated(updated);
+    onPlayerJoined(joined);
+    onPlayerLeft(left);
+    onRoomError(failed);
+    onGameStarted(started);
+    onHostMigrated(hosted);
+
+    return () => {
+      removeListener('room:updated', updated);
+      removeListener('room:playerJoined', joined);
+      removeListener('room:playerLeft', left);
+      removeListener('room:error', failed);
+      removeListener('game:started', started);
+      removeListener('host:migrated', hosted);
     };
+  }, [handleGameStartedProp]);
 
-    const handleStartGame = () => {
-        console.log('🚀 LobbyScreen: Start Game button clicked');
-        startGame();
-    };
-
-    const copyRoomCode = () => {
-        if (room?.code) {
-            navigator.clipboard.writeText(room.code);
-            setIsCopied(true);
-            toast.success('Room code copied to clipboard');
-            setTimeout(() => setIsCopied(false), 2000);
-        }
-    };
-
-    const isHost = room?.hostId === currentUser.id;
-    const currentPlayer = room?.players.find(p => p.id === currentUser.id);
-    const readyCount = room?.players.filter(p => p.isReady || p.isHost).length || 0;
-    const canStart = isHost && (room?.players.length || 0) >= 2 && readyCount >= (room?.players.length || 0);
-
-    if (view === 'selection') {
-        return (
-            <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-gradient-to-b from-background to-background/50 relative overflow-hidden">
-                <div className="absolute top-1/4 -right-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
-                <div className="absolute bottom-1/4 -left-20 w-64 h-64 bg-accent/5 rounded-full blur-3xl" />
-
-                <button
-                    onClick={onBack}
-                    className="absolute top-8 left-8 p-2 rounded-full hover:bg-white/5 transition-colors group"
-                >
-                    <ArrowLeft className="w-6 h-6 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </button>
-
-                <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in">
-                    {/* Create Room */}
-                    <div className="glass-card p-10 flex flex-col items-center text-center gap-6 border border-white/10 hover:border-primary/30 transition-all group">
-                        <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <Users className="w-10 h-10 text-primary" />
-                        </div>
-                        <div>
-                            <h2 className="text-3xl font-display gold-text mb-2">Host a Room</h2>
-                            <p className="text-muted-foreground">Create a private room and invite your friends to play</p>
-                        </div>
-                        <Button
-                            onClick={handleCreateRoom}
-                            disabled={isLoading}
-                            className="w-full py-6 text-lg font-bold btn-monopoly h-14"
-                        >
-                            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Create Private Room'}
-                        </Button>
-                    </div>
-
-                    {/* Join Room */}
-                    <div className="glass-card p-10 flex flex-col items-center text-center gap-6 border border-white/10 hover:border-accent/30 transition-all group">
-                        <div className="w-20 h-20 rounded-2xl bg-accent/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <ChevronRight className="w-10 h-10 text-accent" />
-                        </div>
-                        <div>
-                            <h2 className="text-3xl font-display text-accent mb-2">Join a Room</h2>
-                            <p className="text-muted-foreground">Enter a room code shared by your friend</p>
-                        </div>
-                        <form onSubmit={handleJoinRoom} className="w-full space-y-4">
-                            <Input
-                                placeholder="ENTER ROOM CODE"
-                                value={roomCodeInput}
-                                onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
-                                className="text-center font-mono text-xl tracking-widest h-14 bg-background/50 border-white/10"
-                            />
-                            <Button
-                                type="submit"
-                                disabled={isLoading || !roomCodeInput}
-                                variant="secondary"
-                                className="w-full py-6 text-lg font-bold h-14 bg-accent hover:bg-accent/90 text-accent-foreground"
-                            >
-                                {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Join Room'}
-                            </Button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        );
+  const handleCreateRoom = async () => {
+    setIsLoading(true);
+    try {
+      const response = await createRoom();
+      setRoom(response.room);
+    } catch {
+      toast.error('Could not create a room. Try again.');
+    } finally {
+      setIsLoading(false);
     }
+  };
 
+  const handleJoinRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roomCodeInput.trim()) return toast.error('Enter a room code first.');
+    setIsLoading(true);
+    try {
+      const response = await joinRoom(roomCodeInput.trim().toUpperCase());
+      if (response.success && response.room) setRoom(response.room);
+      else toast.error(response.error || 'Could not join that room.');
+    } catch {
+      toast.error("Couldn't reach the server. Try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLeaveRoom = async () => {
+    try {
+      await leaveRoom();
+      setRoom(null);
+    } catch {
+      toast.error('Could not leave the room.');
+    }
+  };
+
+  const copyRoomCode = () => {
+    if (!room?.code) return;
+    navigator.clipboard.writeText(room.code);
+    setIsCopied(true);
+    toast.success('Room code copied');
+    setTimeout(() => setIsCopied(false), 1800);
+  };
+
+  /* ---------- No room yet: host or join ---------- */
+  if (!room) {
     return (
-        <div className="min-h-screen flex flex-col p-8 bg-gradient-to-b from-background to-background/50">
-            <div className="max-w-5xl w-full mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 mt-12 animate-fade-in">
+      <Shell onBack={onBack} backLabel="Home">
+        <h1 className="font-display text-4xl leading-tight">Take a seat</h1>
+        <p className="mt-2 text-[15px] text-muted-foreground">
+          Signed in as <span className="font-semibold text-foreground">{currentUser.username}</span>.
+        </p>
 
-                {/* Left Column: Room Info */}
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="glass-card p-6 border border-white/10">
-                        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-widest mb-4">Room Status</h3>
-                        <div className="space-y-4">
-                            <div className="p-4 rounded-xl bg-primary/5 border border-primary/10">
-                                <p className="text-xs text-muted-foreground mb-1 uppercase">Room Code</p>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-2xl font-mono font-bold tracking-tighter text-foreground">{room?.code}</span>
-                                    <button
-                                        onClick={copyRoomCode}
-                                        className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-                                    >
-                                        {isCopied ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5 text-muted-foreground" />}
-                                    </button>
-                                </div>
-                            </div>
+        <div className="mt-8 grid gap-0 border-y border-border md:grid-cols-2 md:divide-x md:divide-border">
+          <section className="space-y-4 py-8 md:pr-10">
+            <h2 className="text-xl font-semibold">Host a room</h2>
+            <p className="max-w-sm text-[15px] text-muted-foreground">Create a private room, share the code, and add bots to fill empty seats.</p>
+            <Button size="lg" onClick={handleCreateRoom} disabled={isLoading} className="w-full sm:w-auto sm:min-w-52">
+              {isLoading ? <Loader2 className="animate-spin" /> : 'Create room'}
+            </Button>
+          </section>
 
-                            <div className="flex items-center justify-between px-2">
-                                <span className="text-sm text-muted-foreground">Players</span>
-                                <span className="text-sm font-bold text-foreground">{room?.players.length} / 6</span>
-                            </div>
-
-                            <div className="flex items-center justify-between px-2">
-                                <span className="text-sm text-muted-foreground">Status</span>
-                                <span className="text-sm font-bold text-green-500 animate-pulse">Waiting for Players...</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        <Button
-                            onClick={handleToggleReady}
-                            variant={currentPlayer?.isReady ? "outline" : "default"}
-                            className={`w-full py-6 text-lg font-bold h-14 transition-all ${currentPlayer?.isReady ? 'border-primary/50 text-primary' : 'btn-monopoly'}`}
-                        >
-                            {currentPlayer?.isReady ? (
-                                <span className="flex items-center gap-2"><CheckCircle2 className="w-5 h-5" /> I'm Ready</span>
-                            ) : (
-                                "Mark as Ready"
-                            )}
-                        </Button>
-
-                        {isHost && (
-                            <Button
-                                onClick={handleStartGame}
-                                disabled={!canStart}
-                                className="w-full py-6 text-lg font-bold h-14 bg-accent hover:bg-accent/90 text-accent-foreground shadow-lg shadow-accent/20 disabled:opacity-50"
-                            >
-                                <Play className="w-5 h-5 mr-2" /> Start Game
-                            </Button>
-                        )}
-
-                        {!canStart && isHost && (
-                            <p className="text-xs text-center text-muted-foreground px-4">
-                                Wait for at least 2 players and everyone to be ready
-                            </p>
-                        )}
-
-                        <Button
-                            onClick={handleLeaveRoom}
-                            variant="ghost"
-                            className="w-full py-4 text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                            <LogOut className="w-4 h-4 mr-2" /> Leave Room
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Right Column: Player List */}
-                <div className="lg:col-span-2">
-                    <div className="glass-card p-8 border border-white/10 min-h-[400px]">
-                        <div className="flex items-center justify-between mb-8">
-                            <h2 className="text-3xl font-display gold-text">Participants</h2>
-                            <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-muted-foreground">
-                                Official Rules Applied
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            {room?.players.map((player) => (
-                                <div
-                                    key={player.id}
-                                    className={`
-                    p-6 rounded-2xl border transition-all flex items-center justify-between
-                    ${player.id === currentUser.id ? 'bg-primary/5 border-primary/20' : 'bg-white/5 border-white/5'}
-                  `}
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className="relative">
-                                            <div
-                                                className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow-inner"
-                                                style={{ backgroundColor: `${player.color}20`, color: player.color }}
-                                            >
-                                                {player.username.charAt(0).toUpperCase()}
-                                            </div>
-                                            <div
-                                                className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background ${player.isConnected ? 'bg-green-500' : 'bg-red-500'}`}
-                                            />
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-bold text-lg">{player.username}</span>
-                                                {player.isHost && <Crown className="w-4 h-4 text-yellow-500" />}
-                                                {player.id === currentUser.id && <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-bold uppercase tracking-tighter">You</span>}
-                                            </div>
-                                            <span className="text-xs text-muted-foreground">{player.isHost ? 'Room Manager' : 'Challenger'}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-4">
-                                        {player.isReady || player.isHost ? (
-                                            <div className="flex items-center gap-2 text-green-500 font-medium text-sm">
-                                                <CheckCircle2 className="w-4 h-4" />
-                                                <span>{player.isHost ? 'Ready (Host)' : 'Ready'}</span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-2 text-muted-foreground font-medium text-sm">
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                <span>Thinking...</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-
-                            {/* Empty Slots */}
-                            {Array.from({ length: 6 - (room?.players.length || 0) }).map((_, i) => (
-                                <div
-                                    key={`empty-${i}`}
-                                    className="p-6 rounded-2xl border border-dashed border-white/5 bg-transparent flex items-center justify-center opacity-30"
-                                >
-                                    <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Empty Seat</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
+          <section className="space-y-4 border-t border-border py-8 md:border-t-0 md:pl-10">
+            <h2 className="text-xl font-semibold">Join a room</h2>
+            <p className="max-w-sm text-[15px] text-muted-foreground">Enter the code your host shared.</p>
+            <form onSubmit={handleJoinRoom} className="flex max-w-sm gap-2">
+              <Input
+                value={roomCodeInput}
+                onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                placeholder="ABCD-1234"
+                aria-label="Room code"
+                autoCapitalize="characters"
+                className="h-12 font-mono text-lg tracking-widest"
+              />
+              <Button type="submit" size="lg" variant="secondary" disabled={isLoading || !roomCodeInput}>
+                Join
+              </Button>
+            </form>
+          </section>
         </div>
+      </Shell>
     );
+  }
+
+  /* ---------- In a room ---------- */
+  const isHost = room.hostId === currentUser.id;
+  const me = room.players.find((p) => p.id === currentUser.id);
+  const everyoneReady = room.players.every((p) => p.isReady || p.isHost || p.isBot);
+  const canStart = isHost && room.players.length >= 2 && everyoneReady;
+  const empty = MAX_SEATS - room.players.length;
+
+  return (
+    <Shell onBack={handleLeaveRoom} backLabel="Leave room">
+      <div className="grid gap-10 lg:grid-cols-[360px_1fr]">
+        <section className="space-y-7">
+          <div>
+            <p className="text-[13px] text-muted-foreground">Room code</p>
+            <div className="mt-1 flex items-center gap-3">
+              <span className="font-mono text-4xl font-semibold tracking-wide">{room.code}</span>
+              <Button variant="secondary" size="icon" onClick={copyRoomCode} aria-label="Copy room code">
+                {isCopied ? <Check /> : <Copy />}
+              </Button>
+            </div>
+            <p className="mt-1.5 text-[13px] text-muted-foreground">Share this code. Friends join from the lobby screen.</p>
+          </div>
+
+          <fieldset disabled={!isHost} className="space-y-3 disabled:opacity-100">
+            <legend className="text-[14px] font-semibold">House rules {!isHost && <span className="font-normal text-muted-foreground">· set by the host</span>}</legend>
+            <label className="flex items-center justify-between gap-3 text-[14px]">
+              Starting cash
+              <Input
+                type="number"
+                inputMode="numeric"
+                step={100}
+                min={500}
+                max={10000}
+                value={room.rules?.startingMoney ?? 1500}
+                onChange={(e) => setRules({ startingMoney: parseInt(e.target.value, 10) || 1500, freeParkingPot: !!room.rules?.freeParkingPot })}
+                className="h-10 w-28 text-right disabled:opacity-100"
+              />
+            </label>
+            <label className={cn('flex items-start gap-3 text-[14px]', isHost && 'cursor-pointer')}>
+              <input
+                type="checkbox"
+                checked={!!room.rules?.freeParkingPot}
+                onChange={(e) => setRules({ startingMoney: room.rules?.startingMoney ?? 1500, freeParkingPot: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-[hsl(var(--gold))]"
+              />
+              <span>
+                Free Parking pot
+                <span className="block text-[12px] text-muted-foreground">Taxes go to the middle. Landing on Free Parking collects them.</span>
+              </span>
+            </label>
+          </fieldset>
+
+          <div className="space-y-2">
+            {isHost ? (
+              <>
+                <Button size="lg" className="w-full" disabled={!canStart} onClick={startGame}>
+                  <Play /> Start game
+                </Button>
+                {!canStart && (
+                  <p className="text-[13px] text-muted-foreground">
+                    {room.players.length < 2 ? 'Need at least 2 players. Add a bot or wait for a friend.' : 'Waiting for everyone to be ready.'}
+                  </p>
+                )}
+              </>
+            ) : (
+              <Button size="lg" className="w-full" variant={me?.isReady ? 'secondary' : 'default'} onClick={() => toggleReady(!me?.isReady)}>
+                {me?.isReady ? (
+                  <>
+                    <Check /> Ready, tap to undo
+                  </>
+                ) : (
+                  'Ready up'
+                )}
+              </Button>
+            )}
+            <Button variant="ghost" className="w-full text-muted-foreground" onClick={handleLeaveRoom}>
+              <LogOut /> Leave room
+            </Button>
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-xl font-semibold">Seats</h2>
+            <span className="text-[13px] tabular-nums text-muted-foreground">
+              {room.players.length} of {MAX_SEATS}
+            </span>
+          </div>
+          <ul className="divide-y divide-border border-y border-border">
+            {room.players.map((p) => (
+              <li key={p.id} className="flex min-h-16 items-center gap-3 py-2">
+                <Pawn color={p.color} name={p.username} size={38} />
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-2 truncate text-[16px] font-semibold">
+                    {p.username}
+                    {p.id === currentUser.id && <span className="text-[12px] font-medium text-muted-foreground">you</span>}
+                    {p.isHost && <Crown className="h-4 w-4 text-foreground" aria-label="Host" />}
+                    {p.isBot && <Bot className="h-4 w-4 text-muted-foreground" aria-label="Bot" />}
+                    {!p.isConnected && <WifiOff className="h-4 w-4 text-ruby-text" aria-label="Disconnected" />}
+                  </p>
+                  <p className="text-[13px] text-muted-foreground">{p.isBot ? 'Plays automatically' : p.isHost ? 'Host' : p.isReady ? 'Ready' : 'Not ready yet'}</p>
+                </div>
+                {isHost && p.isBot && (
+                  <Button variant="ghost" size="icon" aria-label={`Remove ${p.username}`} onClick={() => removeBot(p.id)}>
+                    <X />
+                  </Button>
+                )}
+              </li>
+            ))}
+            {Array.from({ length: Math.max(0, empty) }).map((_, i) => (
+              <li key={`empty-${i}`} className="flex min-h-16 items-center gap-3 py-2">
+                <span className="grid h-[38px] w-[38px] place-items-center rounded-full border border-dashed border-border text-muted-foreground" aria-hidden>
+                  <Plus className="h-4 w-4" />
+                </span>
+                <p className="flex-1 text-[14px] text-muted-foreground">Open seat</p>
+                {isHost && (
+                  <Button variant="secondary" size="sm" onClick={addBot}>
+                    <Bot /> Add bot
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </Shell>
+  );
 };

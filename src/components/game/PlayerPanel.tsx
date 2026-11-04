@@ -1,153 +1,109 @@
 import React from 'react';
+import { motion } from 'motion/react';
+import { Bot, Key, Lock, Star, WifiOff } from 'lucide-react';
 import { Player, GameState } from '@/game/types';
 import { getPropertyData, hasMonopoly } from '@/game/engine';
 import { BOARD_TILES, PropertyColor } from '@/game/constants';
-import { MapPin, Key, AlertCircle, Bot, User, Crown } from 'lucide-react';
+import { Money, Pawn, PROPERTY_HEX, PROPERTY_LABEL } from '@/components/game/kit';
+import { cn } from '@/lib/utils';
 
 interface PlayerPanelProps {
   player: Player;
   gameState: GameState;
   isCurrentPlayer: boolean;
+  isYou?: boolean;
+  offline?: boolean;
+  onPropertyClick?: (position: number) => void;
 }
 
-const PROPERTY_COLORS: Record<PropertyColor, string> = {
-  brown: 'bg-amber-900',
-  lightblue: 'bg-sky-400',
-  pink: 'bg-pink-500',
-  orange: 'bg-orange-500',
-  red: 'bg-red-500',
-  yellow: 'bg-yellow-400',
-  green: 'bg-emerald-500',
-  blue: 'bg-blue-600',
-  railroad: 'bg-slate-600',
-  utility: 'bg-amber-500',
-};
-
-export const PlayerPanel: React.FC<PlayerPanelProps> = ({ 
-  player, 
+/** One seat at the table: chip, cash, and a pip per deed grouped by colour. */
+export const PlayerPanel: React.FC<PlayerPanelProps> = ({
+  player,
   gameState,
-  isCurrentPlayer 
+  isCurrentPlayer,
+  isYou,
+  offline,
+  onPropertyClick,
 }) => {
-  const playerProperties = gameState.ownedProperties.filter(p => p.ownerId === player.id);
-  
-  // Group properties by color
-  const groupedProperties = playerProperties.reduce((acc, owned) => {
-    const property = getPropertyData(owned.position);
-    if (property?.color) {
-      if (!acc[property.color]) acc[property.color] = [];
-      acc[property.color].push(owned);
-    }
-    return acc;
-  }, {} as Record<string, typeof playerProperties>);
-
-  // Calculate net worth
-  const netWorth = playerProperties.reduce((total, owned) => {
-    const prop = getPropertyData(owned.position);
-    if (!prop) return total;
-    let value = owned.isMortgaged ? prop.mortgageValue : prop.price;
-    if (owned.houses > 0 && prop.houseCost) {
-      value += Math.floor((owned.houses * prop.houseCost) / 2);
-    }
-    return total + value;
-  }, player.money);
+  const owned = gameState.ownedProperties.filter((p) => p.ownerId === player.id);
+  const groups = new Map<PropertyColor, typeof owned>();
+  owned.forEach((o) => {
+    const color = getPropertyData(o.position)?.color;
+    if (color) groups.set(color, [...(groups.get(color) ?? []), o]);
+  });
 
   return (
-    <div 
-      className={`
-        glass-card p-2 md:p-3 transition-all duration-300
-        ${isCurrentPlayer ? 'ring-2 ring-primary/40' : ''}
-        ${player.isBankrupt ? 'opacity-40 grayscale' : ''}
-      `}
+    <motion.article
+      data-seat={player.id}
+      layout="position"
+      aria-current={isCurrentPlayer ? 'true' : undefined}
+      className={cn(
+        'relative border bg-card px-3 py-2.5 transition-colors duration-200',
+        isCurrentPlayer ? 'border-gold/60 bg-gold/[0.06]' : 'border-border',
+        player.isBankrupt && 'opacity-45'
+      )}
+      style={{ borderRadius: 6 }}
     >
-      {/* Header - compact */}
-      <div className="flex items-center gap-2 mb-2">
-        <div 
-          className="w-8 h-8 md:w-9 md:h-9 rounded-lg flex items-center justify-center shadow-md text-white font-bold text-sm"
-          style={{ 
-            backgroundColor: player.color,
-            boxShadow: `0 2px 12px ${player.color}40`
-          }}
-        >
-          {player.name.charAt(0)}
-        </div>
-        
-        <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-3">
+        <Pawn color={player.color} name={player.name} size={34} dim={player.isBankrupt} />
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <h3 className="font-display text-sm md:text-base text-foreground truncate font-semibold">
-              {player.name}
-            </h3>
-            {isCurrentPlayer && !player.isBankrupt && (
-              <Crown className="w-4 h-4 text-primary animate-glow" />
+            <h3 className="truncate text-[15px] font-semibold leading-tight">{player.name}</h3>
+            {isYou && <span className="text-[11px] font-medium text-muted-foreground">you</span>}
+            {player.isAI && <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Bot" />}
+            {offline && <WifiOff className="h-3.5 w-3.5 shrink-0 text-ruby-text" aria-label="Disconnected" />}
+          </div>
+          <p className="truncate text-[12px] leading-tight text-muted-foreground">
+            {player.isBankrupt ? (
+              <span className="text-ruby-text">Bankrupt</span>
+            ) : (
+              <>
+                {BOARD_TILES[player.position].name}
+                {player.inJail && <span className="text-ruby-text"> · jail {player.jailTurns + 1}/3</span>}
+              </>
+            )}
+          </p>
+        </div>
+        <div className="text-right">
+          <Money value={player.money} className="text-[17px] font-semibold" />
+          <div className="mt-0.5 flex items-center justify-end gap-2 text-[11px] text-muted-foreground">
+            {player.inJail && <Lock className="h-3 w-3 text-ruby-text" aria-label="In jail" />}
+            {player.getOutOfJailCards > 0 && (
+              <span className="inline-flex items-center gap-0.5" title="Get out of jail free cards">
+                <Key className="h-3 w-3" aria-hidden />
+                {player.getOutOfJailCards}
+              </span>
             )}
           </div>
-          
-          {player.isBankrupt ? (
-            <span className="text-xs text-destructive font-semibold flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" />
-              BANKRUPT
-            </span>
-          ) : player.isAI ? (
-            <span className="text-xs text-muted-foreground capitalize">
-              {player.difficulty} AI
-            </span>
-          ) : null}
         </div>
       </div>
 
-      {/* Money - single line */}
-      <div className="text-lg md:text-xl font-bold text-primary mb-2">
-        ${player.money.toLocaleString()}
-      </div>
-
-      {/* Status indicators - compact */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[10px]">
-        <div className="flex items-center gap-1 text-muted-foreground">
-          <MapPin className="w-3 h-3" />
-          <span className="truncate">{BOARD_TILES[player.position].name}</span>
-        </div>
-        
-        {player.inJail && (
-          <span className="px-1.5 py-0.5 bg-destructive/20 text-destructive rounded font-semibold">
-            Jail {player.jailTurns + 1}/3
-          </span>
-        )}
-        
-        {player.getOutOfJailCards > 0 && (
-          <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-accent/20 text-accent rounded">
-            <Key className="w-2.5 h-2.5" />
-            {player.getOutOfJailCards}
-          </span>
-        )}
-      </div>
-
-      {/* Properties - ultra compact */}
-      {Object.keys(groupedProperties).length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {Object.entries(groupedProperties).map(([color, props]) => {
-            const isMonopoly = props.length > 0 && hasMonopoly(gameState, player.id, props[0].position);
-            const totalHouses = props.reduce((sum, p) => sum + p.houses, 0);
-            const hasMortgaged = props.some(p => p.isMortgaged);
-            
+      {groups.size > 0 && (
+        <ul className="mt-2.5 flex flex-wrap gap-1.5" aria-label={`${player.name}'s properties`}>
+          {[...groups.entries()].map(([color, props]) => {
+            const set = hasMonopoly(gameState, player.id, props[0].position);
+            const houses = props.reduce((n, p) => n + p.houses, 0);
             return (
-              <div 
-                key={color} 
-                className={`
-                  ${PROPERTY_COLORS[color as PropertyColor]}
-                  px-1.5 py-0.5 rounded flex items-center gap-0.5
-                  ${isMonopoly ? 'ring-1 ring-primary' : ''}
-                  ${hasMortgaged ? 'opacity-50' : ''}
-                `}
-                title={`${color}: ${props.length} properties${totalHouses > 0 ? `, ${totalHouses} houses` : ''}`}
-              >
-                <span className="text-white text-[10px] font-bold drop-shadow">{props.length}</span>
-                {totalHouses > 0 && (
-                  <span className="text-white text-[10px] font-bold drop-shadow">+{totalHouses}</span>
-                )}
-              </div>
+              <li key={color}>
+                <button
+                  type="button"
+                  onClick={() => onPropertyClick?.(props[0].position)}
+                  title={`${PROPERTY_LABEL[color]}: ${props.length}${set ? ', full set' : ''}${houses ? `, ${houses} buildings` : ''}`}
+                  className={cn(
+                    'flex h-6 items-center gap-1 rounded-[3px] border border-border bg-background pl-1.5 pr-1.5 text-[11px] font-medium tabular-nums transition-colors hover:border-gold/50',
+                    props.some((p) => p.isMortgaged) && 'opacity-50'
+                  )}
+                >
+                  <span className="h-2.5 w-2.5 rounded-[2px]" style={{ background: PROPERTY_HEX[color] }} aria-hidden />
+                  {props.length}
+                  {set && <Star className="h-3 w-3 fill-gold text-gold" aria-label="full set" />}
+                  {houses > 0 && <span className="text-muted-foreground">+{houses}</span>}
+                </button>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
-    </div>
+    </motion.article>
   );
 };

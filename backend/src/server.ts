@@ -40,7 +40,7 @@ import { DEFAULT_RULES, HouseRules, sanitizeRules } from '../../src/game/types';
 import { addEventsToStats, finalStandings } from '../../src/game/stats';
 import { diffEvents } from '../../src/game/events';
 import { autoStep, whoMustAct } from '../../src/game/autopilot';
-import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from '../../src/game/constants';
+import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES, PLAYER_COLORS as SEAT_COLORS } from '../../src/game/constants';
 
 const app = express();
 const httpServer = createServer(app);
@@ -59,7 +59,10 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static files from React build (production)
-const frontendPath = path.join(__dirname, '../../../../dist');
+// Built frontend: ../../dist when run from source (ts-node), ../../../../dist from the compiled output
+const frontendPath =
+    ['../../dist', '../../../../dist'].map((p) => path.join(__dirname, p)).find((p) => fs.existsSync(path.join(p, 'index.html'))) ??
+    path.join(__dirname, '../../dist');
 app.use(express.static(frontendPath));
 
 // Health check endpoint
@@ -334,7 +337,7 @@ io.on('connection', (socket) => {
                     id: session.userId,
                     username: session.username,
                     socketId: socket.id,
-                    color: '#FF0000', // Red for host
+                    color: SEAT_COLORS[0], // first seat colour for the host
                     isReady: false,
                     isConnected: true,
                     isHost: true,
@@ -382,7 +385,7 @@ io.on('connection', (socket) => {
         }
 
         // Add player to room
-        const playerColors = ['#FF0000', '#0000FF', '#00FF00', '#FFFF00', '#FF00FF', '#00FFFF'];
+        const playerColors = [...SEAT_COLORS];
         const usedColors = room.players.map((p: any) => p.color);
         const availableColor = playerColors.find((c) => !usedColors.includes(c)) || '#FFFFFF';
 
@@ -494,7 +497,7 @@ io.on('connection', (socket) => {
     socket.on('room:rematch', () => {
         const session = sessions.get(socket.id);
         const room = session?.roomCode && rooms.get(session.roomCode);
-        if (!room || room.hostId !== session.userId || room.state !== 'finished') return;
+        if (!room || room.state !== 'finished' || !room.players.some((p: any) => p.id === session.userId)) return;
         stopAuto(room);
         room.players = room.players.filter((p: any) => p.isBot || p.isConnected);
         room.players.forEach((p: any) => (p.isReady = !!p.isBot));
@@ -516,7 +519,7 @@ io.on('connection', (socket) => {
     });
 
     // Bots fill empty seats; the host adds and removes them in the lobby
-    const PLAYER_COLORS = ['#FF0000', '#0000FF', '#00FF00', '#FFFF00', '#FF00FF', '#00FFFF'];
+    const PLAYER_COLORS = [...SEAT_COLORS];
     socket.on('room:addBot', () => {
         const session = sessions.get(socket.id);
         const room = session?.roomCode && rooms.get(session.roomCode);
@@ -525,11 +528,14 @@ io.on('connection', (socket) => {
             socket.emit('room:error', { message: 'Room is full' });
             return;
         }
+        // Chips show an initial, so every seat needs its own (a human's included)
+        const initials = new Set(room.players.map((p: any) => p.username.charAt(0).toUpperCase()));
+        const botName = ['Alex', 'Jordan', 'Sam', 'Casey', 'Morgan', 'Taylor'].find((n) => !initials.has(n.charAt(0))) ?? 'Bot';
         const n = room.players.filter((p: any) => p.isBot).length + 1;
         const used = room.players.map((p: any) => p.color);
         room.players.push({
             id: `bot_${Date.now()}_${n}`,
-            username: `Bot ${n}`,
+            username: botName,
             socketId: null,
             color: PLAYER_COLORS.find((c) => !used.includes(c)) || '#FFFFFF',
             isReady: true,

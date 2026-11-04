@@ -1,28 +1,29 @@
 import React, { useEffect, useRef } from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface GameLogProps {
   logs: string[];
+  className?: string;
 }
 
-export const GameLog: React.FC<GameLogProps> = ({ logs }) => {
-  const endRef = useRef<HTMLDivElement>(null);
+/** The running record of the table. The newest line is brightest. */
+export const GameLog: React.FC<GameLogProps> = ({ logs, className }) => {
+  const endRef = useRef<HTMLLIElement>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+    endRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [logs.length]);
+
+  const shown = logs.slice(-80);
 
   return (
-    <div className="space-y-0.5">
-      {logs.map((log, index) => (
-        <p 
-          key={index} 
-          className="text-[10px] md:text-xs text-muted-foreground leading-tight"
-        >
-          {log}
-        </p>
+    <ol className={cn('space-y-1.5 text-[13px] leading-snug', className)} aria-live="polite" aria-label="Game log">
+      {shown.map((line, i) => (
+        <li key={logs.length - shown.length + i} className={i === shown.length - 1 ? 'text-foreground' : 'text-muted-foreground'}>
+          {line}
+        </li>
       ))}
-      <div ref={endRef} />
-    </div>
+      <li ref={endRef} aria-hidden />
+    </ol>
   );
 };

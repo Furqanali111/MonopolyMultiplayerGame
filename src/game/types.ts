@@ -84,6 +84,8 @@ export interface GameState {
   lastDiceRoll: [number, number] | null;
   turnPhase: 'roll' | 'action' | 'endturn' | 'injail';
   currentCard: CardData | null;
+  lastCard?: CardData; // the most recent draw; currentCard is cleared when the card resolves
+  cardSeq?: number; // bumps on every draw so a client can show each card once
   auction: AuctionState | null;
   trade: TradeOffer | null;
   bankruptcyState: BankruptcyState | null;

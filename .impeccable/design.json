@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-04T00:00:00Z",
+  "title": "Design System: Monopoly Master Edition (working title)",
+  "extensions": {
+    "colorMeta": {
+      "gold": { "role": "primary", "displayName": "Brass Gold", "canonical": "hsl(42 74% 57%)", "tonalRamp": ["#2A1F08", "#4D3911", "#7A5B1B", "#A8802A", "#E3B341", "#EACF90", "#F3E3B8", "#FAF2DC"] },
+      "felt": { "role": "secondary", "displayName": "Table Felt", "canonical": "hsl(151 55% 41%)", "tonalRamp": ["#06180F", "#0F3D27", "#1F5C3E", "#2A8456", "#2FA36B", "#5BB983", "#94D2B0", "#CBEBDA"] },
+      "ruby": { "role": "tertiary", "displayName": "Rent Ruby", "canonical": "hsl(350 66% 56%)", "tonalRamp": ["#2B060D", "#5C0F1E", "#8F0024", "#B8283F", "#E45367", "#EE808F", "#F5ACB5", "#FBDADE"] },
+      "ground": { "role": "neutral", "displayName": "Lacquer Ground", "canonical": "hsl(218 22% 7%)", "tonalRamp": ["#0E1116", "#171B22", "#1F252E", "#2A313C", "#4A5362", "#838D9C", "#B6BDC9", "#F3EFE6"] },
+      "bone": { "role": "neutral", "displayName": "Bone", "canonical": "hsl(42 35% 93%)", "tonalRamp": ["#5C584D", "#827E70", "#B9B4A6", "#D3CEC0", "#E5E0D3", "#F3EFE6", "#F8F5EE", "#FCFBF8"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display (Limelight)", "purpose": "Three screen titles only." },
+      "wordmark": { "displayName": "Wordmark (Limelight)", "purpose": "Home hero, top bar, and the felt well." },
+      "title": { "displayName": "Title", "purpose": "Dialog titles." },
+      "body": { "displayName": "Body", "purpose": "Descriptions, log, helper text." },
+      "figure": { "displayName": "Figure", "purpose": "Tabular cash amounts." },
+      "label": { "displayName": "Label", "purpose": "Panel titles, pips, tags; sentence case." },
+      "tile": { "displayName": "Tile", "purpose": "Board names and prices, container-scaled." }
+    },
+    "shadows": [
+      { "name": "brass-rule", "value": "inset 0 0 0 1px hsl(42 74% 57% / 0.22)", "purpose": "Hairline around the board." },
+      { "name": "felt-well", "value": "inset 0 0 0 1px #1F5C3E, inset 0 0 0 4px #0F3D27, inset 0 0 0 5px hsl(42 74% 57% / 0.28), inset 0 8px 24px rgba(0,0,0,0.38)", "purpose": "Recessed table centre." },
+      { "name": "dice-tray", "value": "inset 0 6px 14px rgba(0,0,0,0.5), inset 0 0 0 1px hsl(42 74% 57% / 0.22)", "purpose": "Pill tray for dice." },
+      { "name": "chip-lift", "value": "0 1px 0 rgba(0,0,0,.6), 0 3px 6px -2px rgba(0,0,0,.7), inset 0 0 0 1.5px rgba(14,17,22,.55)", "purpose": "Pawns and flying chips." },
+      { "name": "modal", "value": "0 28px 70px -24px rgba(0,0,0,0.85)", "purpose": "Dialogs only." }
+    ],
+    "motion": [
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Count-ups, pawn settles, panel heading swaps." },
+      { "name": "ease-flight", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Chip flights (0.8s)." },
+      { "name": "state-150", "value": "150ms ease-out", "purpose": "Button and tile state transitions." },
+      { "name": "money-count", "value": "700ms", "purpose": "Money tick-up." },
+      { "name": "reduced-motion", "value": "durations collapse to 0.01ms; flights and pulses are skipped", "purpose": "prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "2xl", "value": "1400px (container)" },
+      { "name": "board-container-520", "value": "520px (tile text hidden below)" },
+      { "name": "board-container-640", "value": "640px (well wordmark hidden below)" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single gold filled action per view.",
+      "html": "<button class=\"ds-btn-primary\">Roll dice</button>",
+      "css": ".ds-btn-primary{background:#E3B341;color:#1F1608;height:44px;padding:0 16px;border:0;border-radius:6px;font:600 14px 'Hanken Grotesk Variable',system-ui,sans-serif;cursor:pointer;transition:background-color 150ms ease-out,transform 150ms ease-out}.ds-btn-primary:hover{background:#EACF90}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid #E3B341;outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Supporting actions beside the primary.",
+      "html": "<button class=\"ds-btn-secondary\">Auction</button>",
+      "css": ".ds-btn-secondary{background:#1F252E;color:#F3EFE6;height:44px;padding:0 16px;border:1px solid #2A313C;border-radius:6px;font:500 14px 'Hanken Grotesk Variable',system-ui,sans-serif;cursor:pointer;transition:border-color 150ms ease-out}.ds-btn-secondary:hover{border-color:rgba(227,179,65,.4)}.ds-btn-secondary:focus-visible{outline:2px solid #E3B341;outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Name, room code and bid fields.",
+      "html": "<input class=\"ds-input\" placeholder=\"Your name\">",
+      "css": ".ds-input{height:44px;width:240px;background:#0E1116;color:#F3EFE6;border:1px solid #2A313C;border-radius:6px;padding:8px 12px;font:400 14px 'Hanken Grotesk Variable',system-ui,sans-serif;font-variant-numeric:tabular-nums;caret-color:#E3B341}.ds-input::placeholder{color:#838D9C}.ds-input:focus-visible{outline:2px solid #E3B341;outline-offset:2px}"
+    },
+    {
+      "name": "Chip Pawn",
+      "kind": "custom",
+      "refersTo": "seat-current",
+      "description": "A player as a casino chip: solid colour, dashed edge, initial.",
+      "html": "<span class=\"ds-pawn\"><span class=\"ds-pawn-edge\"></span><span class=\"ds-pawn-i\">F</span></span>",
+      "css": ".ds-pawn{position:relative;display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#E0609E;color:#0E1116;font:600 14px 'Hanken Grotesk Variable',sans-serif;box-shadow:0 1px 0 rgba(0,0,0,.6),0 3px 6px -2px rgba(0,0,0,.7),inset 0 0 0 1.5px rgba(14,17,22,.55)}.ds-pawn-edge{position:absolute;inset:2px;border-radius:50%;border:2.4px dashed #0E1116;opacity:.55}.ds-pawn-i{position:relative}"
+    },
+    {
+      "name": "Player Seat",
+      "kind": "card",
+      "refersTo": "seat-current",
+      "description": "A player row: chip, name, location, cash, deed pips. Current player gets a gold border.",
+      "html": "<article class=\"ds-seat\"><span class=\"ds-seat-chip\">A</span><div><div class=\"ds-seat-name\">Ada</div><div class=\"ds-seat-loc\">Park Place</div></div><div class=\"ds-seat-cash\">$1,420</div></article>",
+      "css": ".ds-seat{display:flex;align-items:center;gap:12px;width:300px;padding:10px 12px;background:linear-gradient(rgba(227,179,65,.06),rgba(227,179,65,.06)) #171B22;border:1px solid rgba(227,179,65,.6);border-radius:6px;color:#F3EFE6;font-family:'Hanken Grotesk Variable',sans-serif}.ds-seat-chip{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#3D6FD6;color:#F3EFE6;font-weight:600}.ds-seat-name{font-size:15px;font-weight:600}.ds-seat-loc{font-size:12px;color:#838D9C}.ds-seat-cash{margin-left:auto;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Deed Pip",
+      "kind": "chip",
+      "refersTo": "deed-pip",
+      "description": "Property-group count chip with colour swatch.",
+      "html": "<span class=\"ds-pip\"><i class=\"ds-pip-sw\"></i>3</span>",
+      "css": ".ds-pip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 6px;background:#0E1116;border:1px solid #2A313C;border-radius:3px;color:#F3EFE6;font:500 11px 'Hanken Grotesk Variable',sans-serif;font-variant-numeric:tabular-nums;transition:border-color 150ms}.ds-pip:hover{border-color:rgba(227,179,65,.5)}.ds-pip-sw{width:10px;height:10px;border-radius:2px;background:#F28C38}"
+    },
+    {
+      "name": "Dice Tray",
+      "kind": "custom",
+      "refersTo": "dice-tray",
+      "description": "Two bone dice in a recessed felt pill.",
+      "html": "<div class=\"ds-tray\"><span class=\"ds-die\">4</span><span class=\"ds-die\">2</span></div>",
+      "css": ".ds-tray{display:inline-flex;gap:12px;padding:14px 26px;border-radius:999px;background:#0A2517;box-shadow:inset 0 6px 14px rgba(0,0,0,.5),inset 0 0 0 1px rgba(227,179,65,.22)}.ds-die{display:grid;place-items:center;width:48px;height:48px;border-radius:7px;background:#F3EFE6;color:#0E1116;font:600 20px 'Hanken Grotesk Variable',sans-serif;box-shadow:0 6px 10px -2px rgba(0,0,0,.6),inset 0 0 0 1px rgba(14,17,22,.12)}"
+    },
+    {
+      "name": "Dialog",
+      "kind": "card",
+      "refersTo": "dialog",
+      "description": "Modal shell for trades, auctions, bankruptcy and deeds.",
+      "html": "<div class=\"ds-dialog\"><h2>Auction</h2><p>Bidding is open to everyone.</p></div>",
+      "css": ".ds-dialog{width:360px;padding:24px;background:#171B22;border:1px solid #2A313C;border-radius:8px;color:#F3EFE6;font-family:'Hanken Grotesk Variable',sans-serif;box-shadow:0 28px 70px -24px rgba(0,0,0,.85)}.ds-dialog h2{margin:0 0 6px;font-size:18px;font-weight:600;letter-spacing:-.025em}.ds-dialog p{margin:0;font-size:14px;color:#838D9C}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Private Card Room",
+    "overview": "A lacquered near-black table with a felt well, brass-tinted hairlines and bone-white type. Cash is chips, players are chips, deeds are playing cards. Surfaces are flat fills with 1px rules and 6px corners; depth comes from tone and from inset felt, not from glows. It is an operating tool for a live game: at a glance a player knows whose turn it is, the deadline, what just happened, and the one gold button they can press.",
+    "keyCharacteristics": [
+      "One filled gold action per view; everything else is outline, secondary or ghost.",
+      "Chips are the recurring object: pawns, cash flights, bid tokens.",
+      "Felt green is the table and success; ruby is rent, danger and urgency.",
+      "Limelight is a rare display voice; Hanken Grotesk does all the work, with tabular numerals.",
+      "Flat fills, 1px rules, no neon glow, no glass, no gradient text."
+    ],
+    "rules": [
+      { "name": "The One Gold Button Rule", "body": "Gold is the only filled action colour and appears as one primary per view. Cash figures, tags and labels stay bone.", "section": "colors" },
+      { "name": "The Felt Is The Table Rule", "body": "Green means the table or a gain; red means rent, loss or danger. Do not use either as decoration.", "section": "colors" },
+      { "name": "The Colour Is Never Alone Rule", "body": "Players are told apart by the initial on their chip, not by colour.", "section": "colors" },
+      { "name": "The Marquee Rule", "body": "Limelight appears only for the wordmark and the three screen titles. Nothing else gets the display face.", "section": "typography" },
+      { "name": "The Tabular Money Rule", "body": "Every dollar figure is tabular and goes through Money where it can change.", "section": "typography" },
+      { "name": "The Flat Until Physical Rule", "body": "A surface gets a shadow only if it is an object on the table (chip, die, modal), never a card or panel.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep exactly one gold filled button per view and make it the next legal action.",
+      "Do show money moving: use Money and ChipFlights for every cash change.",
+      "Do pair colour with the player's initial or a label.",
+      "Do keep type sentence case, tabular numerals for money, and Limelight to the three titles and the wordmark.",
+      "Do use 1px rules at #2A313C and 6px corners; shadow only physical objects.",
+      "Do read the product name from src/lib/brand.ts."
+    ],
+    "donts": [
+      "Don't add neon glow, glass cards, gradient text or emoji icons.",
+      "Don't use ruby or felt as decoration; they carry meaning.",
+      "Don't use uppercase eyebrows or kickers above titles.",
+      "Don't set cash figures or tags in gold.",
+      "Don't introduce a second filled accent button style."
+    ]
+  }
+}

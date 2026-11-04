@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { resumeSession, Room } from '@/services/socket';
-import { AIDifficulty, GameState, Player } from '@/game/types';
+import { resumeSession, leaveRoom, Room } from '@/services/socket';
+import { AIDifficulty, DEFAULT_RULES, GameState, HouseRules } from '@/game/types';
 import { HomeScreen } from '@/components/screens/HomeScreen';
 import { SetupScreen } from '@/components/screens/SetupScreen';
 import { GameScreen } from '@/components/screens/GameScreen';
@@ -18,6 +18,7 @@ const Index = () => {
   const [gameConfig, setGameConfig] = useState({
     aiCount: 2,
     difficulty: 'medium' as AIDifficulty,
+    rules: DEFAULT_RULES as HouseRules,
   });
   const [resumedRoom, setResumedRoom] = useState<Room | null>(null);
   const [finalGameState, setFinalGameState] = useState<GameState | null>(null);
@@ -58,8 +59,8 @@ const Index = () => {
     setScreen('lobby');
   };
 
-  const handleStartGame = (aiCount: number, difficulty: AIDifficulty) => {
-    setGameConfig({ aiCount, difficulty });
+  const handleStartGame = (aiCount: number, difficulty: AIDifficulty, rules: HouseRules) => {
+    setGameConfig({ aiCount, difficulty, rules });
     setScreen('game');
   };
 
@@ -78,7 +79,16 @@ const Index = () => {
     setScreen('game');
   };
 
+  // The host reset the room: everyone goes back to the lobby together
+  const handleRematch = (room: Room) => {
+    setFinalGameState(null);
+    setOnlineGameState(null);
+    setResumedRoom(room);
+    setScreen('lobby');
+  };
+
   const handleMainMenu = () => {
+    if (isMultiplayer) leaveRoom().catch(() => undefined);
     setScreen('home');
     setFinalGameState(null);
     setOnlineGameState(null);
@@ -120,7 +130,9 @@ const Index = () => {
         <GameScreen
           aiCount={gameConfig.aiCount}
           difficulty={gameConfig.difficulty}
+          rules={gameConfig.rules}
           onGameOver={handleGameOver}
+          onBackToMenu={handleMainMenu}
           isMultiplayer={isMultiplayer}
           onlineGameState={onlineGameState}
           currentUserId={currentUser?.id}
@@ -133,6 +145,7 @@ const Index = () => {
           winner={finalGameState.players.find(p => p.id === finalGameState.winner)!}
           onPlayAgain={handlePlayAgain}
           onMainMenu={handleMainMenu}
+          online={isMultiplayer ? { onRematch: handleRematch } : undefined}
         />
       )}
     </>
