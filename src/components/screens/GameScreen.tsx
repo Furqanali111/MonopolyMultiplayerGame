@@ -458,14 +458,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         gameState={gameState}
         onClose={() => setInspect(null)}
         viewerId={you?.id}
-        onOffer={
-          canAct && gameState.phase === 'playing' && !currentPlayer.inJail
-            ? (partnerId, requestedProperty) => {
-                setInspect(null);
-                setTradeSeed({ partnerId, requestedProperty });
-                setShowTrade(true);
-              }
-            : undefined
+        onOffer={(partnerId, requestedProperty) => {
+          setInspect(null);
+          setTradeSeed({ partnerId, requestedProperty });
+          setShowTrade(true);
+        }}
+        offerBlocked={
+          !canAct
+            ? 'You can make offers on your own turn.'
+            : currentPlayer.inJail
+              ? 'You cannot trade while in jail.'
+              : gameState.phase !== 'playing'
+                ? 'Finish the auction or trade in progress first.'
+                : undefined
         }
       />
       {card && <CardDisplay card={card} onDismiss={() => setCard(null)} />}

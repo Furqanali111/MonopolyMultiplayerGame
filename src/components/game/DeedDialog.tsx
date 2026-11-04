@@ -14,6 +14,8 @@ interface DeedDialogProps {
   /** Set when the viewer can make an offer right now (their turn) */
   onOffer?: (ownerId: string, position: number) => void;
   viewerId?: string;
+  /** Why an offer cannot be sent right now; the button is shown but disabled */
+  offerBlocked?: string;
 }
 
 const RENT_LABELS = ['Rent', 'With a full set', 'With 1 house', 'With 2 houses', 'With 3 houses', 'With 4 houses', 'With a hotel'];
