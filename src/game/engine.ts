@@ -295,7 +295,11 @@ export function buyProperty(state: GameState, playerId: PlayerId, position: numb
     }],
     // Doubles earn another roll; otherwise the turn is over
     turnPhase: player.doublesCount > 0 ? 'roll' : 'endturn',
-    gameLog: [...state.gameLog, `${player.name} bought ${property.name} for $${property.price}`],
+    gameLog: [
+      ...state.gameLog,
+      `${player.name} bought ${property.name} for $${property.price}`,
+      ...(player.doublesCount > 0 ? [`${player.name} gets another turn for rolling doubles!`] : []),
+    ],
   };
 }
 
