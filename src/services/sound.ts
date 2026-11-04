@@ -38,6 +38,7 @@ function audio(): AudioContext | null {
       gain.gain.value = 0.9;
       comp.connect(gain).connect(ctx.destination);
       master = comp;
+      loadSamples(ctx);
     }
     if (ctx.state === 'suspended') void ctx.resume(); // browsers allow this after the first click
     return ctx;
@@ -238,11 +239,94 @@ const PLAYERS: Record<Sfx, (c: AudioContext, t: number) => void> = {
   tap: (c, t) => tone(c, t, 1000, 0.03, { type: 'triangle', gain: 0.04 }),
 };
 
+// Recorded samples (Kenney, CC0: see public/sounds/CREDITS.md). Each part picks one file at random
+// so repeats do not sound identical. Anything not listed here, or not loaded yet, uses the synth above.
+interface Part {
+  pick: string[];
+  at?: number;
+  gain?: number;
+  rate?: number;
+}
+const n = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => `${prefix}${i + 1}`);
+
+const SAMPLED: Partial<Record<Sfx, { parts: Part[]; synth?: (c: AudioContext, t: number) => void }>> = {
+  dice: { parts: [{ pick: n('dice-shake-', 3) }] },
+  clack: { parts: [{ pick: n('die-throw-', 4) }, { pick: n('dice-throw-', 3), at: 0.08, gain: 0.6 }] },
+  step: { parts: [{ pick: n('chip-lay-', 3), gain: 0.5, rate: 1.2 }] },
+  stepLast: { parts: [{ pick: n('chips-collide-', 4), gain: 0.6 }] },
+  go: { parts: [{ pick: ['handleCoins'] }] },
+  coinIn: { parts: [{ pick: n('chips-handle-', 4) }] },
+  coinOut: { parts: [{ pick: n('chips-collide-', 4), gain: 0.9 }] },
+  tax: { parts: [{ pick: n('chips-stack-', 4) }] },
+  pot: { parts: [{ pick: ['handleCoins'] }, { pick: ['handleCoins2'], at: 0.35 }, { pick: n('chips-handle-', 4), at: 0.6 }], synth: (c, t) => REGISTER(c, t + 0.9) },
+  buy: { parts: [{ pick: ['bookPlace1', 'bookPlace2'] }], synth: (c, t) => REGISTER(c, t + 0.12) },
+  build: { parts: [{ pick: ['chop'], rate: 1.25 }, { pick: ['chop'], at: 0.16, rate: 1.25 }] },
+  hotel: { parts: [{ pick: ['chop'], rate: 1.25 }, { pick: ['chop'], at: 0.16, rate: 1.25 }, { pick: ['chop'], at: 0.32, rate: 1.1 }, { pick: ['bong_001'], at: 0.5, rate: 0.7 }] },
+  sell: { parts: [{ pick: ['chop'], rate: 1.25 }, { pick: ['handleCoins2'], at: 0.12 }] },
+  mortgage: { parts: [{ pick: ['bookClose'] }, { pick: ['metalClick'], at: 0.12 }] },
+  unmortgage: { parts: [{ pick: ['metalLatch'] }, { pick: ['pluck_002'], at: 0.2, rate: 1.2 }] },
+  cardChance: { parts: [{ pick: ['card-fan-1'] }] },
+  cardCommunity: { parts: [{ pick: n('card-slide-', 4) }] },
+  jail: {
+    parts: [{ pick: ['doorClose_1'] }],
+    synth: (c, t) => {
+      tone(c, t + 0.25, 700, 0.25, { type: 'square', gain: 0.05, to: 900 });
+      tone(c, t + 0.5, 900, 0.25, { type: 'square', gain: 0.05, to: 700 });
+    },
+  },
+  unjail: { parts: [{ pick: ['metalLatch'] }, { pick: ['doorOpen_1'], at: 0.2 }] },
+  turn: { parts: [{ pick: ['bong_001'], rate: 0.85 }] },
+  auction: { parts: [{ pick: ['chop'], rate: 0.8 }] },
+  bid: { parts: [{ pick: ['pluck_001'], rate: 1.4 }] },
+  sold: { parts: [{ pick: ['chop'], rate: 0.8 }, { pick: ['chop'], at: 0.2, rate: 0.8 }, { pick: ['handleCoins'], at: 0.4 }] },
+  trade: { parts: [{ pick: ['pluck_001'] }, { pick: ['pluck_002'], at: 0.12 }] },
+  tradeYes: { parts: [{ pick: ['confirmation_003'] }] },
+  tradeNo: { parts: [{ pick: ['error_004'] }] },
+  tap: { parts: [{ pick: ['click_001'], gain: 0.35, rate: 1.2 }] },
+};
+
+const buffers = new Map<string, AudioBuffer>();
+let loadingStarted = false;
+
+function loadSamples(c: AudioContext) {
+  if (loadingStarted) return;
+  loadingStarted = true;
+  const files = new Set(Object.values(SAMPLED).flatMap((s) => s!.parts.flatMap((p) => p.pick)));
+  files.forEach(async (file) => {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}sounds/${file}.mp3`);
+      buffers.set(file, await c.decodeAudioData(await res.arrayBuffer()));
+    } catch {
+      /* a missing or undecodable file just leaves that sound on the synth */
+    }
+  });
+}
+
+function sample(c: AudioContext, at: number, part: Part) {
+  const loaded = part.pick.filter((f) => buffers.has(f));
+  const buffer = buffers.get(loaded[Math.floor(Math.random() * loaded.length)]);
+  if (!buffer) return;
+  const src = c.createBufferSource();
+  src.buffer = buffer;
+  src.playbackRate.value = (part.rate ?? 1) * rand(0.96, 1.04);
+  const g = c.createGain();
+  g.gain.value = part.gain ?? 1;
+  src.connect(g).connect(master!);
+  src.start(at);
+}
+
 /** Play a sound now, or `delay` seconds from now. */
 export function play(name: Sfx, delay = 0) {
   const c = audio();
   if (!c) return;
-  PLAYERS[name](c, c.currentTime + delay);
+  const t = c.currentTime + delay;
+  const recorded = SAMPLED[name];
+  if (recorded && recorded.parts.every((p) => p.pick.some((f) => buffers.has(f)))) {
+    recorded.parts.forEach((p) => sample(c, t + (p.at ?? 0), p));
+    recorded.synth?.(c, t);
+  } else {
+    PLAYERS[name](c, t);
+  }
 }
 
 let rattledAt = 0;
