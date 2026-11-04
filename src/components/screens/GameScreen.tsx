@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { GameState, Player, TradeOffer, AIDifficulty } from '@/game/types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Home } from 'lucide-react';
+import { toast } from 'sonner';
+import { GameState, TradeOffer, AIDifficulty, HouseRules } from '@/game/types';
 import {
   initializeGame,
   rollDice,
@@ -11,32 +13,28 @@ import {
   startAuction,
   placeBid,
   passAuction,
-  finalizeAuction,
   buildHouse,
   sellHouse,
   mortgageProperty,
   unmortgageProperty,
   checkWinCondition,
-  getPropertyOwner,
-  getPropertyData,
   proposeTrade,
   acceptTrade,
   declineTrade,
   attemptPayment,
   declareBankruptcy,
-  BOARD_TILES,
 } from '@/game/engine';
-import { JAIL_FINE } from '@/game/constants';
-import {
-  shouldAIBuyProperty,
-  getAIAuctionBid,
-  getAIJailDecision,
-  getAIBuildDecisions,
-  shouldAIAcceptTrade,
-} from '@/game/ai';
+import type { CardData } from '@/game/constants';
 import { autoStep, whoMustAct } from '@/game/autopilot';
 import {
   onGameStateUpdate,
+  onGameDeadline,
+  onGameAutoplayed,
+  onChatMessage,
+  onChatHistory,
+  removeListener,
+  sendChat,
+  ChatMessage,
   rollDice as rollDiceSocket,
   buyProperty as buyPropertySocket,
   declineProperty as declinePropertySocket,
@@ -46,6 +44,10 @@ import {
   rollForJail as rollForJailSocket,
   payJailFine as payJailFineSocket,
   useJailCard as jailCardSocket,
+  buildHouse as buildHouseSocket,
+  sellHouse as sellHouseSocket,
+  mortgageProperty as mortgageSocket,
+  unmortgageProperty as unmortgageSocket,
   proposeTrade as proposeTradeSocket,
   acceptTrade as acceptTradeSocket,
   declineTrade as declineTradeSocket,
@@ -59,15 +61,22 @@ import { PlayerPanel } from '@/components/game/PlayerPanel';
 import { ActionPanel } from '@/components/game/ActionPanel';
 import { AuctionModal } from '@/components/game/AuctionModal';
 import { TradeModal } from '@/components/game/TradeModal';
+import { TradeOfferDialog } from '@/components/game/TradeOfferDialog';
 import { BankruptcyModal } from '@/components/game/BankruptcyModal';
+import { DeedDialog } from '@/components/game/DeedDialog';
 import { GameLog } from '@/components/game/GameLog';
+import { ChatPanel } from '@/components/game/ChatPanel';
 import { CardDisplay } from '@/components/game/CardDisplay';
-import { Home, Settings } from 'lucide-react';
+import { Pawn } from '@/components/game/kit';
+import { ChipFlights } from '@/components/game/ChipFlights';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PRODUCT_NAME } from '@/lib/brand';
 
 interface GameScreenProps {
   aiCount: number;
   difficulty: AIDifficulty;
+  rules?: HouseRules;
   onGameOver: (state: GameState) => void;
   onBackToMenu?: () => void;
   isMultiplayer?: boolean;
@@ -78,72 +87,72 @@ interface GameScreenProps {
 export const GameScreen: React.FC<GameScreenProps> = ({
   aiCount,
   difficulty,
+  rules,
   onGameOver,
   onBackToMenu,
   isMultiplayer = false,
   onlineGameState = null,
   currentUserId,
 }) => {
-  console.log('🎮 GameScreen rendering with:', { isMultiplayer, hasOnlineState: !!onlineGameState });
-
   const [gameState, setGameState] = useState<GameState>(() => {
     if (onlineGameState) {
       console.log('📦 Initializing with online game state:', onlineGameState);
       // Validate the online game state
       if (!onlineGameState.players || !Array.isArray(onlineGameState.players)) {
         console.error('❌ Invalid online game state - missing or invalid players array');
-        return initializeGame(aiCount, difficulty);
+        return initializeGame(aiCount, difficulty, rules);
       }
       if (onlineGameState.players.length === 0) {
         console.error('❌ Invalid online game state - empty players array');
-        return initializeGame(aiCount, difficulty);
+        return initializeGame(aiCount, difficulty, rules);
       }
       console.log('✅ Online game state is valid, using it');
       return onlineGameState;
     }
     console.log('🎲 Initializing with local game state');
-    return initializeGame(aiCount, difficulty);
+    return initializeGame(aiCount, difficulty, rules);
   });
   const [isRolling, setIsRolling] = useState(false);
   const [showCard, setShowCard] = useState(false);
   const [showTrade, setShowTrade] = useState(false);
-  const [tradeResponseTimer, setTradeResponseTimer] = useState<NodeJS.Timeout | null>(null);
-
-  // Safety check for gameState before accessing players
-  if (!gameState || !gameState.players || gameState.players.length === 0) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading game...</p>
-        </div>
-      </div>
-    );
-  }
+  const [inspect, setInspect] = useState<number | null>(null);
+  const [card, setCard] = useState<CardData | null>(null);
+  const [deadline, setDeadline] = useState<{ playerId: string; at: number; total: number } | null>(null);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const seenCard = useRef(gameState.cardSeq ?? 0);
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
 
-  // Listen for multiplayer game state updates
+  // Online: the server is the source of truth. Subscribe, and unsubscribe on the way out.
   useEffect(() => {
     if (!isMultiplayer) return;
 
-    console.log('🎮 Multiplayer mode active, listening for state updates');
-
-    const handleStateUpdate = ({ gameState: newState }: { gameState: GameState }) => {
-      console.log('📥 Received game state update', newState);
-      if (newState && newState.players) {
-        setGameState(newState);
-      } else {
-        console.error('Invalid game state received:', newState);
-      }
+    const onState = ({ gameState: next }: { gameState: GameState }) => {
+      if (next && next.players) setGameState(next);
     };
+    const onDeadline = ({ playerId, at }: { playerId: string; at: number }) =>
+      setDeadline({ playerId, at, total: Math.max(1, Math.round((at - Date.now()) / 1000)) });
+    const onAuto = ({ playerId }: { playerId: string }) => {
+      const name = gameState.players.find((p) => p.id === playerId)?.name ?? 'A player';
+      toast.info(`${name} ran out of time, so the table played for them.`);
+    };
+    const onMessage = (m: ChatMessage) => setChat((prev) => [...prev, m].slice(-100));
+    const onHistory = (m: ChatMessage[]) => setChat(m);
 
-    // Use the imported socket function
-    onGameStateUpdate(handleStateUpdate);
+    onGameStateUpdate(onState);
+    onGameDeadline(onDeadline);
+    onGameAutoplayed(onAuto);
+    onChatMessage(onMessage);
+    onChatHistory(onHistory);
 
     return () => {
-      // Cleanup if needed
+      removeListener('game:stateUpdate', onState);
+      removeListener('game:deadline', onDeadline);
+      removeListener('game:autoplayed', onAuto);
+      removeListener('chat:message', onMessage);
+      removeListener('chat:history', onHistory);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMultiplayer]);
 
   // Check for game over
@@ -158,17 +167,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   }, [gameState?.players, onGameOver]);
 
-  // Show card when drawn (with delay for better UX)
+  // Show each drawn card once. Cards other people draw close themselves.
   useEffect(() => {
-    if (gameState.currentCard) {
-      // Add delay so player can see where they landed before card appears
-      const timer = setTimeout(() => {
-        setShowCard(true);
-      }, 800); // 800ms delay
-
-      return () => clearTimeout(timer);
-    }
-  }, [gameState.currentCard]);
+    const seq = gameState.cardSeq ?? 0;
+    if (seq === seenCard.current || !gameState.lastCard) return;
+    seenCard.current = seq;
+    const drawn = gameState.lastCard;
+    const byMe = !currentPlayer.isAI && (!isMultiplayer || currentPlayer.id === currentUserId);
+    const open = setTimeout(() => setCard(drawn), 600);
+    const close = byMe ? undefined : setTimeout(() => setCard((c) => (c === drawn ? null : c)), 2400);
+    return () => {
+      clearTimeout(open);
+      if (close) clearTimeout(close);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState.cardSeq]);
 
   // Single player: AI seats act through the shared autopilot (online, the server does this)
   useEffect(() => {
@@ -278,24 +291,24 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // ...existing code...
 
   const handleBuildHouse = useCallback((position: number) => {
-    const newState = buildHouse(gameState, currentPlayer.id, position);
-    setGameState(newState);
-  }, [gameState, currentPlayer]);
+    if (isMultiplayer) return buildHouseSocket(position);
+    setGameState((prev) => buildHouse(prev, prev.players[prev.currentPlayerIndex].id, position));
+  }, [isMultiplayer]);
 
   const handleSellHouse = useCallback((position: number) => {
-    const newState = sellHouse(gameState, currentPlayer.id, position);
-    setGameState(newState);
-  }, [gameState, currentPlayer]);
+    if (isMultiplayer) return sellHouseSocket(position);
+    setGameState((prev) => sellHouse(prev, prev.players[prev.currentPlayerIndex].id, position));
+  }, [isMultiplayer]);
 
   const handleMortgage = useCallback((position: number) => {
-    const newState = mortgageProperty(gameState, currentPlayer.id, position);
-    setGameState(newState);
-  }, [gameState, currentPlayer]);
+    if (isMultiplayer) return mortgageSocket(position);
+    setGameState((prev) => mortgageProperty(prev, prev.players[prev.currentPlayerIndex].id, position));
+  }, [isMultiplayer]);
 
   const handleUnmortgage = useCallback((position: number) => {
-    const newState = unmortgageProperty(gameState, currentPlayer.id, position);
-    setGameState(newState);
-  }, [gameState, currentPlayer]);
+    if (isMultiplayer) return unmortgageSocket(position);
+    setGameState((prev) => unmortgageProperty(prev, prev.players[prev.currentPlayerIndex].id, position));
+  }, [isMultiplayer]);
 
   const handleEndTurn = useCallback(() => {
     if (isMultiplayer) return endTurnSocket();
@@ -332,244 +345,122 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setGameState({ ...declareBankruptcy(gameState, playerId, creditorId), phase: 'playing', bankruptcyState: null });
   }, [gameState, isMultiplayer]);
 
-  const canRoll = gameState.turnPhase === 'roll' && !isRolling && !currentPlayer.isAI;
-  const isHumanTurn = !currentPlayer.isAI;
-
-  // In multiplayer, check if it's this player's turn
-  // Convert both IDs to strings for comparison since multiplayer uses string IDs
-  const isMyTurn = !isMultiplayer || (currentUserId && currentPlayer.id === currentUserId);
-
-  console.log('🎯 Turn control:', {
-    isMultiplayer,
-    currentUserId,
-    currentPlayerId: currentPlayer.id,
-    isMyTurn,
-    turnPhase: gameState.turnPhase
-  });
+  // Who controls what on this screen
+  const human = (id?: string) => {
+    const p = gameState.players.find((x) => x.id === id);
+    return !!p && !p.isAI && (!isMultiplayer || p.id === currentUserId);
+  };
+  const canAct = human(currentPlayer.id);
+  const you = isMultiplayer ? gameState.players.find((p) => p.id === currentUserId) : gameState.players.find((p) => !p.isAI);
+  const debtorId = gameState.bankruptcyState?.playerId;
+  const tradeToId = gameState.trade?.toPlayer;
+  const myDeadline = deadline && deadline.playerId === currentPlayer.id ? deadline : null;
+  const latest = gameState.gameLog[gameState.gameLog.length - 1];
+  const tabs: [string, string][] = [['players', 'Players'], ['log', 'Log'], ...(isMultiplayer ? [['chat', 'Chat'] as [string, string]] : [])];
 
   return (
-    <div className="h-screen flex flex-col p-2 md:p-3 bg-gradient-to-br from-background via-background to-secondary/20 overflow-hidden">
-      <div className="max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
-        {/* Compact Header */}
-        <div className="flex justify-between items-center mb-2 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            {onBackToMenu && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onBackToMenu}
-                className="h-8 px-2"
-              >
-                <Home className="w-4 h-4" />
-              </Button>
-            )}
+    <div className="min-h-dvh bg-background">
+      <header className="sticky top-0 z-30 border-b border-border bg-background">
+        <div className="mx-auto flex h-12 max-w-[1500px] items-center gap-2 px-3 md:px-4">
+          {onBackToMenu && (
+            <Button variant="ghost" size="icon" aria-label="Leave the table" onClick={onBackToMenu} className="-ml-2">
+              <Home />
+            </Button>
+          )}
+          <span className="font-display text-lg leading-none text-gold">{PRODUCT_NAME}</span>
+          <div className="ml-auto flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
+            <Pawn color={currentPlayer.color} name={currentPlayer.name} size={24} />
+            <span className="truncate font-medium">{canAct ? 'Your turn' : `${currentPlayer.name}'s turn`}</span>
           </div>
         </div>
+      </header>
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-2 md:gap-3 flex-1 overflow-hidden">
-          {/* Left sidebar - Player panels (compact) */}
-          <div className="xl:col-span-2 space-y-1.5 md:space-y-2 order-2 xl:order-1 overflow-y-auto scrollbar-thin">
-            {gameState.players.map((player, index) => (
-              <PlayerPanel
-                key={player.id}
-                player={player}
-                gameState={gameState}
-                isCurrentPlayer={index === gameState.currentPlayerIndex}
-              />
-            ))}
-          </div>
-
-          {/* Center - Game board with integrated dice and log */}
-          <div className="xl:col-span-8 order-1 xl:order-2 flex items-center justify-center overflow-hidden">
-            <div className="w-full h-full flex items-center justify-center">
-              <GameBoard
-                gameState={gameState}
-                centerContent={
-                  <>
-                    {/* Dice in center - compact */}
-                    <div className="glass-panel rounded-lg backdrop-blur-md p-2">
-                      <Dice
-                        values={gameState.lastDiceRoll}
-                        isRolling={isRolling}
-                        disabled={!canRoll || !isMyTurn}
-                        onRoll={handleRollDice}
-                      />
-                    </div>
-
-                    {/* Game log in center - scrollable */}
-                    <div className="glass-panel rounded-lg backdrop-blur-md p-2 max-h-24 md:max-h-32 overflow-y-auto scrollbar-thin">
-                      <GameLog logs={gameState.gameLog.slice(-8)} />
-                    </div>
-                  </>
-                }
-              />
-            </div>
-          </div>
-
-          {/* Right sidebar - Actions only */}
-          <div className="xl:col-span-2 order-3 overflow-y-auto scrollbar-thin">
-
-            {/* Action panel */}
-            {isHumanTurn && (
-              <ActionPanel
-                gameState={gameState}
-                player={currentPlayer}
-                onBuyProperty={handleBuyProperty}
-                onDeclineProperty={handleDeclineProperty}
-                onBuildHouse={handleBuildHouse}
-                onSellHouse={handleSellHouse}
-                onMortgage={handleMortgage}
-                onUnmortgage={handleUnmortgage}
-                onPayJailFine={handlePayJailFine}
-                onUseJailCard={handleUseJailCard}
-                onRollForJail={handleRollForJail}
-                onEndTurn={handleEndTurn}
-                onTrade={() => setShowTrade(true)}
-              />
-            )}
-
-            {/* AI thinking indicator */}
-            {!isHumanTurn && (
-              <div className="glass-card p-4 text-center">
-                <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  <p className="font-medium">{currentPlayer.name}...</p>
-                </div>
-              </div>
-            )}
-          </div>
+      <main className="mx-auto grid max-w-[1500px] gap-3 p-3 md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+        <div className="mx-auto w-full" style={{ maxWidth: 'min(100%, calc(100dvh - 5.5rem))' }}>
+          <GameBoard gameState={gameState} onTileClick={setInspect}>
+            <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
+            <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
+              {latest}
+            </p>
+          </GameBoard>
+          <p className="mt-2 text-center text-[12px] text-muted-foreground md:hidden">Tap any tile to read its deed.</p>
         </div>
-      </div>
 
-      {/* Card display */}
-      {showCard && gameState.currentCard && (
-        <CardDisplay
-          card={gameState.currentCard}
-          onDismiss={() => setShowCard(false)}
-        />
-      )}
+        <aside className="flex min-h-0 flex-col gap-3 lg:sticky lg:top-[3.75rem] lg:max-h-[calc(100dvh-4.5rem)]">
+          <ActionPanel
+            gameState={gameState}
+            player={currentPlayer}
+            canAct={canAct}
+            isRolling={isRolling}
+            deadlineAt={myDeadline?.at}
+            deadlineTotal={myDeadline?.total}
+            onRoll={handleRollDice}
+            onBuyProperty={handleBuyProperty}
+            onDeclineProperty={handleDeclineProperty}
+            onBuildHouse={handleBuildHouse}
+            onSellHouse={handleSellHouse}
+            onMortgage={handleMortgage}
+            onUnmortgage={handleUnmortgage}
+            onPayJailFine={handlePayJailFine}
+            onUseJailCard={handleUseJailCard}
+            onRollForJail={handleRollForJail}
+            onEndTurn={handleEndTurn}
+            onTrade={() => setShowTrade(true)}
+          />
 
-      {/* Auction modal */}
+          <Tabs defaultValue="players" className="flex min-h-0 flex-1 flex-col">
+            <TabsList className="h-10 w-full justify-start gap-1 rounded-none border-b border-border bg-transparent p-0">
+              {tabs.map(([value, label]) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="h-10 rounded-none border-b-2 border-transparent px-3 text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:border-gold data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                >
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent value="players" className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
+              {gameState.players.map((player, index) => (
+                <PlayerPanel
+                  key={player.id}
+                  player={player}
+                  gameState={gameState}
+                  isCurrentPlayer={index === gameState.currentPlayerIndex}
+                  isYou={player.id === you?.id}
+                  onPropertyClick={setInspect}
+                />
+              ))}
+            </TabsContent>
+            <TabsContent value="log" className="mt-3 max-h-72 min-h-0 flex-1 overflow-y-auto pr-1 lg:max-h-none">
+              <GameLog logs={gameState.gameLog} />
+            </TabsContent>
+            {isMultiplayer && (
+              <TabsContent value="chat" className="mt-3 flex max-h-80 min-h-0 flex-1 flex-col lg:max-h-none">
+                <ChatPanel messages={chat} selfId={currentUserId} onSend={sendChat} className="min-h-0 flex-1" />
+              </TabsContent>
+            )}
+          </Tabs>
+        </aside>
+      </main>
+
+      <ChipFlights players={gameState.players} />
+      <DeedDialog position={inspect} gameState={gameState} onClose={() => setInspect(null)} />
+      {card && <CardDisplay card={card} onDismiss={() => setCard(null)} />}
+
       {gameState.phase === 'auction' && gameState.auction && (
-        <AuctionModal
-          gameState={gameState}
-          onBid={handleBid}
-          onPass={handlePass}
-          currentUserId={currentUserId}
-        />
+        <AuctionModal gameState={gameState} onBid={handleBid} onPass={handlePass} currentUserId={currentUserId} />
       )}
 
-      {/* Trade modal */}
-      <TradeModal
-        open={showTrade}
-        onOpenChange={setShowTrade}
-        gameState={gameState}
-        currentPlayer={currentPlayer}
-        onPropose={handleProposeTrade}
-      />
+      <TradeModal open={showTrade} onOpenChange={setShowTrade} gameState={gameState} currentPlayer={currentPlayer} onPropose={handleProposeTrade} />
 
-      {/* Incoming trade request */}
-      {gameState.trade && gameState.trade.active && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="glass-card w-full max-w-2xl p-6 space-y-4 animate-bounce-in">
-            <h3 className="font-display text-2xl text-foreground text-center">Trade Offer</h3>
+      <TradeOfferDialog gameState={gameState} canRespond={human(tradeToId)} onAccept={handleAcceptTrade} onDecline={handleDeclineTrade} />
 
-            <div className="text-center text-muted-foreground">
-              <span style={{ color: gameState.players.find(p => p.id === gameState.trade?.fromPlayer)?.color }}>
-                {gameState.players.find(p => p.id === gameState.trade?.fromPlayer)?.name}
-              </span>
-              {' '}wants to trade with{' '}
-              <span style={{ color: gameState.players.find(p => p.id === gameState.trade?.toPlayer)?.color }}>
-                {gameState.players.find(p => p.id === gameState.trade?.toPlayer)?.name}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 p-4 bg-secondary/20 rounded-lg">
-              {/* They offer */}
-              <div className="space-y-2">
-                <h4 className="font-semibold text-sm text-muted-foreground">They Offer:</h4>
-                {gameState.trade.offeredProperties.length > 0 && (
-                  <div className="space-y-1">
-                    {gameState.trade.offeredProperties.map(pos => {
-                      const prop = getPropertyData(pos);
-                      return (
-                        <div key={pos} className="text-sm text-foreground">
-                          • {prop?.name}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {gameState.trade.offeredMoney > 0 && (
-                  <div className="text-sm text-primary font-bold">
-                    + ${gameState.trade.offeredMoney}
-                  </div>
-                )}
-                {gameState.trade.offeredCards > 0 && (
-                  <div className="text-sm text-foreground">
-                    + {gameState.trade.offeredCards} Jail Card{gameState.trade.offeredCards > 1 ? 's' : ''}
-                  </div>
-                )}
-              </div>
-
-              {/* They request */}
-              <div className="space-y-2">
-                <h4 className="font-semibold text-sm text-muted-foreground">They Request:</h4>
-                {gameState.trade.requestedProperties.length > 0 && (
-                  <div className="space-y-1">
-                    {gameState.trade.requestedProperties.map(pos => {
-                      const prop = getPropertyData(pos);
-                      return (
-                        <div key={pos} className="text-sm text-foreground">
-                          • {prop?.name}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {gameState.trade.requestedMoney > 0 && (
-                  <div className="text-sm text-primary font-bold">
-                    + ${gameState.trade.requestedMoney}
-                  </div>
-                )}
-                {gameState.trade.requestedCards > 0 && (
-                  <div className="text-sm text-foreground">
-                    + {gameState.trade.requestedCards} Jail Card{gameState.trade.requestedCards > 1 ? 's' : ''}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Only show buttons if it's the human player's turn to respond */}
-            {!gameState.players.find(p => p.id === gameState.trade!.toPlayer)?.isAI && (
-              <div className="flex gap-3">
-                <Button onClick={handleAcceptTrade} className="btn-primary flex-1">
-                  Accept Trade
-                </Button>
-                <Button onClick={handleDeclineTrade} variant="secondary" className="flex-1">
-                  Decline Trade
-                </Button>
-              </div>
-            )}
-
-            {/* AI thinking indicator */}
-            {gameState.players.find(p => p.id === gameState.trade!.toPlayer)?.isAI && (
-              <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <p className="text-sm">
-                  {gameState.players.find(p => p.id === gameState.trade!.toPlayer)?.name} is considering...
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Bankruptcy modal */}
       {gameState.phase === 'bankruptcy' && gameState.bankruptcyState && (
         <BankruptcyModal
           gameState={gameState}
           bankruptcyState={gameState.bankruptcyState}
+          canAct={human(debtorId)}
           onSellHouse={handleSellHouse}
           onMortgage={handleMortgage}
           onAttemptPayment={handleAttemptPayment}

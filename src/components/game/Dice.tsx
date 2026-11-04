@@ -1,125 +1,81 @@
-import React from 'react';
-import { Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 
 interface DiceProps {
   values: [number, number] | null;
   isRolling: boolean;
-  onRoll: () => void;
-  disabled?: boolean;
 }
 
-const DiceFace: React.FC<{ value: number; isRolling: boolean }> = ({ value, isRolling }) => {
-  const dots = getDotPositions(value);
+// Pip layout on a 3x3 grid
+const PIPS: Record<number, number[]> = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
 
+const Die: React.FC<{ value: number; rolling: boolean; index: number }> = ({ value, rolling, index }) => {
+  const reduce = useReducedMotion();
   return (
-    <div 
-      className={`
-        dice-face
-        ${isRolling ? 'animate-dice-roll' : ''}
-      `}
+    <motion.div
+      aria-hidden
+      key={rolling ? 'rolling' : `settled-${value}`}
+      initial={rolling || reduce ? false : { scale: 0.82, rotate: index ? 10 : -10, y: -6 }}
+      animate={
+        rolling && !reduce
+          ? { rotate: [0, -14, 12, -8, 6, 0], y: [0, -7, 0, -4, 0], transition: { duration: 0.5, repeat: Infinity } }
+          : { scale: 1, rotate: 0, y: 0, transition: { type: 'spring', stiffness: 420, damping: 18 } }
+      }
+      className="grid grid-cols-3 grid-rows-3 gap-[3px] rounded-[7px] bg-bone p-[7px]"
+      style={{
+        width: 'clamp(34px,7.4cqw,60px)',
+        height: 'clamp(34px,7.4cqw,60px)',
+        boxShadow: '0 6px 10px -2px rgba(0,0,0,.6), inset 0 -2px 0 rgba(14,17,22,.14), inset 0 0 0 1px rgba(14,17,22,.12)',
+      }}
     >
-      {dots.map((pos, i) => (
-        <div
-          key={i}
-          className="dice-dot"
-          style={{ top: pos.top, left: pos.left }}
-        />
+      {Array.from({ length: 9 }).map((_, i) => (
+        <span key={i} className="grid place-items-center">
+          {PIPS[value]?.includes(i) && <span className="block aspect-square w-full max-w-[9px] rounded-full bg-background" />}
+        </span>
       ))}
-    </div>
+    </motion.div>
   );
 };
 
-function getDotPositions(value: number): { top: string; left: string }[] {
-  const center = { top: 'calc(50% - 5px)', left: 'calc(50% - 5px)' };
-  const topLeft = { top: 'calc(25% - 5px)', left: 'calc(25% - 5px)' };
-  const topRight = { top: 'calc(25% - 5px)', left: 'calc(75% - 5px)' };
-  const bottomLeft = { top: 'calc(75% - 5px)', left: 'calc(25% - 5px)' };
-  const bottomRight = { top: 'calc(75% - 5px)', left: 'calc(75% - 5px)' };
-  const midLeft = { top: 'calc(50% - 5px)', left: 'calc(25% - 5px)' };
-  const midRight = { top: 'calc(50% - 5px)', left: 'calc(75% - 5px)' };
+/** Two dice in the felt tray. While rolling they tumble through random faces. */
+export const Dice: React.FC<DiceProps> = ({ values, isRolling }) => {
+  const [faces, setFaces] = useState<[number, number]>(values ?? [1, 1]);
 
-  const positions: Record<number, { top: string; left: string }[]> = {
-    1: [center],
-    2: [topLeft, bottomRight],
-    3: [topLeft, center, bottomRight],
-    4: [topLeft, topRight, bottomLeft, bottomRight],
-    5: [topLeft, topRight, center, bottomLeft, bottomRight],
-    6: [topLeft, topRight, midLeft, midRight, bottomLeft, bottomRight],
-  };
+  useEffect(() => {
+    if (!isRolling) {
+      if (values) setFaces(values);
+      return;
+    }
+    const id = setInterval(() => setFaces([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]), 70);
+    return () => clearInterval(id);
+  }, [isRolling, values]);
 
-  return positions[value] || [];
-}
-
-export const Dice: React.FC<DiceProps> = ({ values, isRolling, onRoll, disabled }) => {
-  const displayValues = values || [1, 1];
-  const isDoubles = values && values[0] === values[1];
-  const total = values ? values[0] + values[1] : 0;
+  const total = values ? values[0] + values[1] : null;
+  const doubles = !!values && values[0] === values[1];
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      {/* Compact dice container */}
-      <div className="flex gap-2">
-        <div className="dice-face-sm">
-          <div 
-            className={`w-12 h-12 rounded-lg flex items-center justify-center ${isRolling ? 'animate-dice-roll' : ''}`}
-            style={{
-              background: 'linear-gradient(145deg, hsl(0 0% 95%), hsl(0 0% 85%))',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2), inset 0 -2px 4px rgba(0, 0, 0, 0.1), inset 0 2px 4px rgba(255, 255, 255, 0.8)'
-            }}
-          >
-            <div className="relative w-full h-full flex items-center justify-center">
-              {getDotPositions(displayValues[0]).map((pos, i) => (
-                <div
-                  key={i}
-                  className="absolute w-2 h-2 rounded-full bg-slate-800"
-                  style={{ top: pos.top, left: pos.left }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="dice-face-sm">
-          <div 
-            className={`w-12 h-12 rounded-lg flex items-center justify-center ${isRolling ? 'animate-dice-roll' : ''}`}
-            style={{
-              background: 'linear-gradient(145deg, hsl(0 0% 95%), hsl(0 0% 85%))',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2), inset 0 -2px 4px rgba(0, 0, 0, 0.1), inset 0 2px 4px rgba(255, 255, 255, 0.8)'
-            }}
-          >
-            <div className="relative w-full h-full flex items-center justify-center">
-              {getDotPositions(displayValues[1]).map((pos, i) => (
-                <div
-                  key={i}
-                  className="absolute w-2 h-2 rounded-full bg-slate-800"
-                  style={{ top: pos.top, left: pos.left }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
+    <div className="flex flex-col items-center gap-[clamp(4px,1cqw,10px)]">
+      <div
+        className="flex items-center gap-[clamp(6px,1.4cqw,14px)] rounded-[999px] bg-[hsl(151_62%_9%)] px-[clamp(14px,3cqw,30px)] py-[clamp(8px,1.6cqw,16px)] shadow-[inset_0_6px_14px_rgba(0,0,0,0.5),inset_0_0_0_1px_hsl(var(--gold)/0.22)]"
+        role="img" aria-label={values ? `Rolled ${values[0]} and ${values[1]}` : 'Dice'}>
+        <Die value={faces[0]} rolling={isRolling} index={0} />
+        <Die value={faces[1]} rolling={isRolling} index={1} />
       </div>
-      
-      {/* Compact result */}
-      {values && (
-        <div className="text-center">
-          <span className="text-xl md:text-2xl font-bold text-primary">{total}</span>
-          {isDoubles && (
-            <p className="text-[10px] text-accent font-semibold flex items-center gap-1 justify-center mt-0.5">
-              <Sparkles className="w-2.5 h-2.5" />
-              Doubles!
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Compact button */}
-      <button
-        onClick={onRoll}
-        disabled={disabled || isRolling}
-        className="btn-primary w-full text-xs h-7 px-3"
-      >
-        {isRolling ? 'Rolling...' : 'Roll'}
-      </button>
+      <div className="h-[1.4em] text-[clamp(10px,1.6cqw,14px)] tabular-nums text-bone/80" aria-live="polite">
+        {!isRolling && total !== null && (
+          <>
+            {total}
+            {doubles && <span className="ml-2 font-semibold text-foreground">Doubles, roll again</span>}
+          </>
+        )}
+      </div>
     </div>
   );
 };

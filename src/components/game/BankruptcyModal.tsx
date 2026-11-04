@@ -1,201 +1,119 @@
 import React from 'react';
 import { GameState, BankruptcyState } from '@/game/types';
-import {
-    getPropertyData,
-    canSellHouse,
-    canMortgage,
-    calculateLiquidAssets,
-} from '@/game/engine';
+import { getPropertyData, canSellHouse, canMortgage, calculateLiquidAssets } from '@/game/engine';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import {
-    AlertTriangle,
-    Home,
-    Lock,
-    DollarSign,
-    TrendingUp,
-} from 'lucide-react';
+import { Money, Pawn, PROPERTY_HEX } from '@/components/game/kit';
 
 interface BankruptcyModalProps {
-    gameState: GameState;
-    bankruptcyState: BankruptcyState;
-    onSellHouse: (position: number) => void;
-    onMortgage: (position: number) => void;
-    onAttemptPayment: () => void;
-    onDeclareBankruptcy: () => void;
+  gameState: GameState;
+  bankruptcyState: BankruptcyState;
+  /** True when the person at this screen is the one who owes */
+  canAct: boolean;
+  onSellHouse: (position: number) => void;
+  onMortgage: (position: number) => void;
+  onAttemptPayment: () => void;
+  onDeclareBankruptcy: () => void;
 }
 
 export const BankruptcyModal: React.FC<BankruptcyModalProps> = ({
-    gameState,
-    bankruptcyState,
-    onSellHouse,
-    onMortgage,
-    onAttemptPayment,
-    onDeclareBankruptcy,
+  gameState,
+  bankruptcyState,
+  canAct,
+  onSellHouse,
+  onMortgage,
+  onAttemptPayment,
+  onDeclareBankruptcy,
 }) => {
-    const player = gameState.players.find(p => p.id === bankruptcyState.playerId);
-    if (!player) return null;
+  const player = gameState.players.find((p) => p.id === bankruptcyState.playerId);
+  if (!player) return null;
+  const creditor = bankruptcyState.creditorId !== null ? gameState.players.find((p) => p.id === bankruptcyState.creditorId) : null;
 
-    const creditor = bankruptcyState.creditorId !== null
-        ? gameState.players.find(p => p.id === bankruptcyState.creditorId)
-        : null;
+  const mine = gameState.ownedProperties.filter((p) => p.ownerId === player.id);
+  const sellable = mine.filter((p) => canSellHouse(gameState, player.id, p.position));
+  const mortgageable = mine.filter((p) => canMortgage(gameState, player.id, p.position));
+  const liquid = calculateLiquidAssets(gameState, player.id);
+  const canAfford = player.money >= bankruptcyState.amountOwed;
+  const shortfall = Math.max(0, bankruptcyState.amountOwed - player.money);
 
-    const playerProperties = gameState.ownedProperties.filter(p => p.ownerId === player.id);
-    const sellableHouses = playerProperties.filter(p => canSellHouse(gameState, player.id, p.position));
-    const mortgageableProperties = playerProperties.filter(p => canMortgage(gameState, player.id, p.position));
+  return (
+    <Dialog open>
+      <DialogContent className="max-w-lg [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+        <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
+          <Pawn color={player.color} name={player.name} size={26} />
+          {canAct ? 'You owe more than you have' : `${player.name} is raising cash`}
+        </DialogTitle>
+        <DialogDescription className="text-[14px] text-muted-foreground">
+          ${bankruptcyState.amountOwed.toLocaleString()} for {bankruptcyState.reason.toLowerCase()}
+          {creditor ? `, owed to ${creditor.name}` : ', owed to the bank'}.
+        </DialogDescription>
 
-    const liquidAssets = calculateLiquidAssets(gameState, player.id);
-    const canAfford = player.money >= bankruptcyState.amountOwed;
-    const shortfall = bankruptcyState.amountOwed - player.money;
+        <dl className="grid grid-cols-3 divide-x divide-border border border-border text-center" style={{ borderRadius: 6 }}>
+          <div className="px-2 py-2.5">
+            <dt className="text-[12px] text-muted-foreground">Cash</dt>
+            <dd className="text-[17px] font-semibold"><Money value={player.money} showDelta={false} /></dd>
+          </div>
+          <div className="px-2 py-2.5">
+            <dt className="text-[12px] text-muted-foreground">Can raise</dt>
+            <dd className="text-[17px] font-semibold tabular-nums">${liquid.toLocaleString()}</dd>
+          </div>
+          <div className="px-2 py-2.5">
+            <dt className="text-[12px] text-muted-foreground">Short by</dt>
+            <dd className={`text-[17px] font-semibold tabular-nums ${shortfall ? 'text-ruby-text' : 'text-felt-light'}`}>${shortfall.toLocaleString()}</dd>
+          </div>
+        </dl>
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-            <div className="glass-card w-full max-w-2xl p-6 space-y-6 animate-bounce-in">
-                {/* Header */}
-                <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-destructive/20 flex items-center justify-center">
-                        <AlertTriangle className="w-8 h-8 text-destructive" />
-                    </div>
-                    <div className="flex-1">
-                        <h2 className="font-display text-2xl text-foreground">Cannot Afford Payment</h2>
-                        <p className="text-sm text-muted-foreground">
-                            You need to raise cash or declare bankruptcy
-                        </p>
-                    </div>
+        {canAct && !canAfford && (
+          <div className="space-y-3">
+            {sellable.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-[13px] font-semibold text-muted-foreground">Sell buildings</h3>
+                <div className="flex flex-wrap gap-2">
+                  {sellable.map((o) => {
+                    const prop = getPropertyData(o.position)!;
+                    return (
+                      <Button key={o.position} size="sm" variant="outline" onClick={() => onSellHouse(o.position)}>
+                        <span className="h-3 w-1.5 rounded-[1px]" style={{ background: prop.color ? PROPERTY_HEX[prop.color] : '#6C7584' }} aria-hidden />
+                        {prop.name} +${Math.floor(prop.houseCost! / 2)}
+                      </Button>
+                    );
+                  })}
                 </div>
-
-                {/* Payment Details */}
-                <div className="glass-panel p-4 space-y-2">
-                    <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Amount Owed:</span>
-                        <span className="text-xl font-bold text-destructive">${bankruptcyState.amountOwed}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Reason:</span>
-                        <span className="text-foreground">{bankruptcyState.reason}</span>
-                    </div>
-                    {creditor && (
-                        <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Owed To:</span>
-                            <div className="flex items-center gap-2">
-                                <div
-                                    className="w-4 h-4 rounded-full"
-                                    style={{ backgroundColor: creditor.color }}
-                                />
-                                <span className="text-foreground">{creditor.name}</span>
-                            </div>
-                        </div>
-                    )}
+              </div>
+            )}
+            {mortgageable.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-[13px] font-semibold text-muted-foreground">Mortgage deeds</h3>
+                <div className="flex flex-wrap gap-2">
+                  {mortgageable.map((o) => {
+                    const prop = getPropertyData(o.position)!;
+                    return (
+                      <Button key={o.position} size="sm" variant="outline" onClick={() => onMortgage(o.position)}>
+                        <span className="h-3 w-1.5 rounded-[1px]" style={{ background: prop.color ? PROPERTY_HEX[prop.color] : '#6C7584' }} aria-hidden />
+                        {prop.name} +${prop.mortgageValue}
+                      </Button>
+                    );
+                  })}
                 </div>
+              </div>
+            )}
+            {sellable.length === 0 && mortgageable.length === 0 && <p className="text-[14px] text-muted-foreground">Nothing left to sell or mortgage.</p>}
+          </div>
+        )}
 
-                {/* Current Status */}
-                <div className="grid grid-cols-3 gap-3">
-                    <div className="glass-panel p-3 text-center">
-                        <DollarSign className="w-5 h-5 mx-auto mb-1 text-primary" />
-                        <div className="text-xs text-muted-foreground">Current Cash</div>
-                        <div className="text-lg font-bold text-foreground">${player.money}</div>
-                    </div>
-                    <div className="glass-panel p-3 text-center">
-                        <TrendingUp className="w-5 h-5 mx-auto mb-1 text-accent" />
-                        <div className="text-xs text-muted-foreground">Liquid Assets</div>
-                        <div className="text-lg font-bold text-foreground">${liquidAssets}</div>
-                    </div>
-                    <div className="glass-panel p-3 text-center">
-                        <AlertTriangle className="w-5 h-5 mx-auto mb-1 text-destructive" />
-                        <div className="text-xs text-muted-foreground">Shortfall</div>
-                        <div className="text-lg font-bold text-destructive">${Math.max(0, shortfall)}</div>
-                    </div>
-                </div>
-
-                {/* Actions to Raise Cash */}
-                {!canAfford && (
-                    <div className="space-y-4">
-                        <h3 className="font-display text-lg text-foreground">Raise Cash</h3>
-
-                        {/* Sell Houses */}
-                        {sellableHouses.length > 0 && (
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Home className="w-4 h-4" />
-                                    Sell Buildings
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {sellableHouses.map(owned => {
-                                        const prop = getPropertyData(owned.position)!;
-                                        const sellValue = Math.floor(prop.houseCost! / 2);
-                                        return (
-                                            <Button
-                                                key={owned.position}
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => onSellHouse(owned.position)}
-                                                className="text-xs h-8"
-                                            >
-                                                {prop.name.split(' ')[0]} (+${sellValue})
-                                            </Button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Mortgage Properties */}
-                        {mortgageableProperties.length > 0 && (
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Lock className="w-4 h-4" />
-                                    Mortgage Properties
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {mortgageableProperties.map(owned => {
-                                        const prop = getPropertyData(owned.position)!;
-                                        return (
-                                            <Button
-                                                key={owned.position}
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => onMortgage(owned.position)}
-                                                className="text-xs h-8"
-                                            >
-                                                {prop.name.split(' ')[0]} (+${prop.mortgageValue})
-                                            </Button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {sellableHouses.length === 0 && mortgageableProperties.length === 0 && (
-                            <p className="text-sm text-muted-foreground text-center py-4">
-                                No assets available to sell or mortgage
-                            </p>
-                        )}
-                    </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex gap-3">
-                    <Button
-                        onClick={onAttemptPayment}
-                        disabled={!canAfford}
-                        className="btn-primary flex-1"
-                    >
-                        {canAfford ? `Pay $${bankruptcyState.amountOwed}` : 'Cannot Pay Yet'}
-                    </Button>
-                    <Button
-                        onClick={onDeclareBankruptcy}
-                        variant="destructive"
-                        className="flex-1"
-                    >
-                        Declare Bankruptcy
-                    </Button>
-                </div>
-
-                {canAfford && (
-                    <p className="text-xs text-center text-primary">
-                        ✓ You now have enough cash to make the payment
-                    </p>
-                )}
-            </div>
-        </div>
-    );
+        {canAct ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button size="lg" className="flex-1" disabled={!canAfford} onClick={onAttemptPayment}>
+              {canAfford ? `Pay $${bankruptcyState.amountOwed.toLocaleString()}` : 'Raise more cash to pay'}
+            </Button>
+            <Button size="lg" variant="destructive" className="flex-1" onClick={onDeclareBankruptcy}>
+              Declare bankruptcy
+            </Button>
+          </div>
+        ) : (
+          <p className="text-[14px] text-muted-foreground" aria-live="polite">The table continues once they pay or go bankrupt.</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 };

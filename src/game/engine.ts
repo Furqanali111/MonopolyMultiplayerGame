@@ -789,6 +789,8 @@ export function drawCard(state: GameState, type: 'chance' | 'community'): GameSt
       players: updatedPlayers,
       [type === 'chance' ? 'chanceDeck' : 'communityChestDeck']: remainingDeck,
       currentCard: drawnCard,
+      lastCard: drawnCard,
+      cardSeq: (state.cardSeq ?? 0) + 1,
       gameLog: [...state.gameLog, `${player.name} drew: "${drawnCard.text}"`],
     };
   }
@@ -798,6 +800,8 @@ export function drawCard(state: GameState, type: 'chance' | 'community'): GameSt
     ...state,
     [type === 'chance' ? 'chanceDeck' : 'communityChestDeck']: [...remainingDeck, drawnCard],
     currentCard: drawnCard,
+    lastCard: drawnCard,
+    cardSeq: (state.cardSeq ?? 0) + 1,
     gameLog: [...state.gameLog, `${player.name} drew: "${drawnCard.text}"`],
   };
 }

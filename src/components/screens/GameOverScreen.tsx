@@ -1,119 +1,75 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Player, GameState } from '@/game/types';
-import { calculatePlayerNetWorth } from '@/game/engine';
+import { finalStandings } from '@/game/stats';
 import { Button } from '@/components/ui/button';
-import { Building2, Home, Hotel, TrendingUp } from 'lucide-react';
-
+import { Money, Pawn } from '@/components/game/kit';
+import { Shell } from '@/components/screens/Shell';
+import { onRematch, requestRematch, removeListener, Room } from '@/services/socket';
 
 interface GameOverScreenProps {
   gameState: GameState;
   winner: Player;
   onPlayAgain: () => void;
   onMainMenu: () => void;
+  /** Online games: where a rematch leads */
+  online?: { onRematch: (room: Room) => void };
 }
 
-export const GameOverScreen: React.FC<GameOverScreenProps> = ({
-  gameState,
-  winner,
-  onPlayAgain,
-  onMainMenu
-}) => {
-  const netWorth = calculatePlayerNetWorth(gameState, winner.id);
+export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, winner, onPlayAgain, onMainMenu, online }) => {
+  const reduce = useReducedMotion();
+  const standings = finalStandings(gameState, {});
 
-  // Calculate winner's statistics
-  const winnerProperties = gameState.ownedProperties.filter(p => p.ownerId === winner.id);
-  const propertyCount = winnerProperties.length;
-  const houseCount = winnerProperties.reduce((sum, p) => sum + (p.houses > 0 && p.houses < 5 ? p.houses : 0), 0);
-  const hotelCount = winnerProperties.filter(p => p.houses === 5).length;
+  useEffect(() => {
+    if (!online) return;
+    const handler = ({ room }: { room: Room }) => online.onRematch(room);
+    onRematch(handler);
+    return () => removeListener('room:rematch', handler);
+  }, [online]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8">
-      <div className="text-center animate-bounce-in max-w-3xl">
-        {/* Trophy */}
-        <div className="text-8xl mb-6">🏆</div>
-
-        <h1 className="font-display text-4xl md:text-6xl gradient-text mb-4">
-          WINNER!
-        </h1>
-
-        <div
-          className="inline-flex items-center gap-3 px-6 py-3 rounded-xl mb-6"
-          style={{ backgroundColor: winner.color + '30' }}
-        >
-          <div
-            className="w-8 h-8 rounded-full shadow-lg"
-            style={{ backgroundColor: winner.color }}
-          />
-          <span className="font-display text-2xl text-foreground">
-            {winner.name}
-          </span>
+    <Shell onBack={onMainMenu} backLabel="Main menu" width="form">
+      <motion.div initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}>
+        <div className="flex items-center gap-4">
+          <Pawn color={winner.color} name={winner.name} size={56} />
+          <h1 className="font-display text-4xl leading-tight">{winner.name} wins</h1>
         </div>
 
-        {/* Statistics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="glass-card p-4">
-            <TrendingUp className="w-6 h-6 mx-auto mb-2 text-primary" />
-            <div className="text-xs text-muted-foreground mb-1">Net Worth</div>
-            <div className="text-2xl font-bold text-primary">${netWorth}</div>
-          </div>
-
-          <div className="glass-card p-4">
-            <Building2 className="w-6 h-6 mx-auto mb-2 text-accent" />
-            <div className="text-xs text-muted-foreground mb-1">Properties</div>
-            <div className="text-2xl font-bold text-foreground">{propertyCount}</div>
-          </div>
-
-          <div className="glass-card p-4">
-            <Home className="w-6 h-6 mx-auto mb-2 text-green-500" />
-            <div className="text-xs text-muted-foreground mb-1">Houses</div>
-            <div className="text-2xl font-bold text-foreground">{houseCount}</div>
-          </div>
-
-          <div className="glass-card p-4">
-            <Hotel className="w-6 h-6 mx-auto mb-2 text-yellow-500" />
-            <div className="text-xs text-muted-foreground mb-1">Hotels</div>
-            <div className="text-2xl font-bold text-foreground">{hotelCount}</div>
-          </div>
-        </div>
-
-        {/* Eliminated players */}
-        <div className="mb-8">
-          <p className="text-sm text-muted-foreground mb-2">Other Players:</p>
-          <div className="flex gap-4 justify-center">
-            {gameState.players
-              .filter(p => p.id !== winner.id)
-              .map(player => (
-                <div key={player.id} className="text-center opacity-50">
-                  <div
-                    className="w-6 h-6 rounded-full mx-auto mb-1"
-                    style={{ backgroundColor: player.color }}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {player.name}
-                    <br />
-                    <span className="text-destructive">Bankrupt</span>
-                  </p>
+        <ol className="mt-8 divide-y divide-border border-y border-border" aria-label="Final standings">
+          {standings.map((row, i) => {
+            const player = gameState.players.find((p) => p.id === row.playerId)!;
+            return (
+              <li key={row.playerId} className="flex min-h-14 items-center gap-3 py-2">
+                <span className="w-5 text-[14px] tabular-nums text-muted-foreground">{i + 1}</span>
+                <Pawn color={player.color} name={player.name} size={30} dim={row.isBankrupt} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold">{player.name}</p>
+                  <p className="text-[12px] text-muted-foreground">{row.isBankrupt ? 'Bankrupt' : `${row.properties} deed${row.properties === 1 ? '' : 's'}`}</p>
                 </div>
-              ))}
-          </div>
-        </div>
+                <div className="text-right">
+                  <p className="text-[12px] text-muted-foreground">Net worth</p>
+                  <Money value={row.netWorth} showDelta={false} className="text-[16px] font-semibold" />
+                </div>
+              </li>
+            );
+          })}
+        </ol>
 
-        {/* Actions */}
-        <div className="flex gap-4 justify-center">
-          <Button
-            onClick={onPlayAgain}
-            className="btn-primary"
-          >
-            Play Again
-          </Button>
-          <Button
-            onClick={onMainMenu}
-            variant="secondary"
-          >
-            Main Menu
+        <div className="mt-8 flex flex-col gap-2 sm:flex-row">
+          {online ? (
+            <Button size="lg" className="flex-1" onClick={requestRematch}>
+              Rematch
+            </Button>
+          ) : (
+            <Button size="lg" className="flex-1" onClick={onPlayAgain}>
+              Play again
+            </Button>
+          )}
+          <Button size="lg" variant="secondary" className="flex-1" onClick={onMainMenu}>
+            Main menu
           </Button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </Shell>
   );
 };

@@ -1,6 +1,6 @@
 // Complete Monopoly board data with official values
 
-export const PLAYER_COLORS = ['#E74C3C', '#3498DB', '#2ECC71', '#F1C40F'] as const;
+export const PLAYER_COLORS = ['#F0605D', '#4D9BFF', '#3DD68C', '#F5B544', '#A27BFF', '#3CCFCF'] as const;
 export const PLAYER_NAMES = ['You', 'Alex', 'Jordan', 'Sam'] as const;
 
 export const TOTAL_HOUSES = 32;

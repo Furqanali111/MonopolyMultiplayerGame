@@ -21,8 +21,8 @@ export function diffEvents(prev: GameState, next: GameState): GameEvent[] {
     events.push({ type: 'dice', playerId: mover.id, dice: next.lastDiceRoll });
   }
 
-  if (next.currentCard && next.currentCard !== prev.currentCard) {
-    events.push({ type: 'card', playerId: next.players[next.currentPlayerIndex].id, text: next.currentCard.text });
+  if (next.lastCard && (next.cardSeq ?? 0) !== (prev.cardSeq ?? 0)) {
+    events.push({ type: 'card', playerId: mover.id, text: next.lastCard.text });
   }
 
   for (const p of next.players) {
