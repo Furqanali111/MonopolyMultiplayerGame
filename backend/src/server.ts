@@ -35,6 +35,7 @@ import {
     canMortgage,
     canUnmortgage,
 } from '../../src/game/engine';
+import { diffEvents } from '../../src/game/events';
 import { autoStep, whoMustAct } from '../../src/game/autopilot';
 import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from '../../src/game/constants';
 
@@ -77,7 +78,7 @@ function publish(room: any, next: any) {
     next = applyWinCondition(next);
     room.gameState = next;
     room.version = (room.version || 0) + 1;
-    io.to(room.code).emit('game:stateUpdate', { gameState: next });
+    io.to(room.code).emit('game:stateUpdate', { gameState: next, events: diffEvents(prev, next), seq: room.version });
     if (next.phase === 'gameover' && prev.phase !== 'gameover') {
         room.state = 'finished';
         stopAuto(room);
