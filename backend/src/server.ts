@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { randomUUID } from 'crypto';
 
 // Load environment variables
@@ -684,6 +685,68 @@ function generateRoomCode(): string {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return code;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence: rooms and identities are snapshotted to a JSON file so a restart
+// doesn't end every game. shortcut: single-file snapshot every 2s (a crash can lose
+// the last couple of seconds); move to Redis/SQLite when running more than one server.
+// ---------------------------------------------------------------------------
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, '../../data/state.json');
+
+const serialise = () =>
+    JSON.stringify(
+        { rooms: [...rooms.values()], users: [...users.values()] },
+        (key, value) => (key === 'timer' ? undefined : value instanceof Set ? [...value] : value)
+    );
+
+let lastSaved = '';
+function saveState() {
+    try {
+        const data = serialise();
+        if (data === lastSaved) return;
+        fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+        fs.writeFileSync(DATA_FILE + '.tmp', data);
+        fs.renameSync(DATA_FILE + '.tmp', DATA_FILE); // atomic swap: never a half-written file
+        lastSaved = data;
+    } catch (err) {
+        console.error('⚠️ Could not save state:', err);
+    }
+}
+
+function loadState() {
+    try {
+        if (!fs.existsSync(DATA_FILE)) return;
+        const saved = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+        for (const room of saved.rooms || []) {
+            // Nobody is connected yet; bots always are
+            room.players.forEach((p: any) => {
+                p.isConnected = !!p.isBot;
+                p.socketId = null;
+            });
+            room.autoplay = new Set(room.autoplay || []);
+            rooms.set(room.code, room);
+        }
+        for (const user of saved.users || []) {
+            user.socketId = null;
+            users.set(user.token, user);
+            // Everyone gets the normal grace period to come back
+            user.timer = setTimeout(() => dropUser(user), GRACE_MS);
+        }
+        rooms.forEach((room) => scheduleAuto(room));
+        console.log(`♻️  Restored ${rooms.size} room(s) and ${users.size} player(s)`);
+    } catch (err) {
+        console.error('⚠️ Could not load saved state (starting empty):', err);
+    }
+}
+
+loadState();
+setInterval(saveState, 2000).unref();
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+        saveState();
+        process.exit(0);
+    });
 }
 
 // Start server
