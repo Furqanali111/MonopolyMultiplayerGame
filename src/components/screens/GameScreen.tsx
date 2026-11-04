@@ -118,6 +118,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [isRolling, setIsRolling] = useState(false);
   const [showCard, setShowCard] = useState(false);
   const [showTrade, setShowTrade] = useState(false);
+  const [tradeSeed, setTradeSeed] = useState<{ partnerId: string; requestedProperty: number } | null>(null);
   const [inspect, setInspect] = useState<number | null>(null);
   const [card, setCard] = useState<CardData | null>(null);
   const [deadline, setDeadline] = useState<{ playerId: string; at: number; total: number } | null>(null);
@@ -409,7 +410,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             onUseJailCard={handleUseJailCard}
             onRollForJail={handleRollForJail}
             onEndTurn={handleEndTurn}
-            onTrade={() => setShowTrade(true)}
+            onTrade={() => {
+              setTradeSeed(null);
+              setShowTrade(true);
+            }}
           />
 
           <Tabs defaultValue="players" className="flex min-h-0 flex-1 flex-col">
@@ -449,14 +453,28 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       </main>
 
       <ChipFlights players={gameState.players} pot={gameState.freeParkingPot ?? 0} />
-      <DeedDialog position={inspect} gameState={gameState} onClose={() => setInspect(null)} />
+      <DeedDialog
+        position={inspect}
+        gameState={gameState}
+        onClose={() => setInspect(null)}
+        viewerId={you?.id}
+        onOffer={
+          canAct && gameState.phase === 'playing' && !currentPlayer.inJail
+            ? (partnerId, requestedProperty) => {
+                setInspect(null);
+                setTradeSeed({ partnerId, requestedProperty });
+                setShowTrade(true);
+              }
+            : undefined
+        }
+      />
       {card && <CardDisplay card={card} onDismiss={() => setCard(null)} />}
 
       {gameState.phase === 'auction' && gameState.auction && (
         <AuctionModal gameState={gameState} onBid={handleBid} onPass={handlePass} currentUserId={currentUserId} />
       )}
 
-      <TradeModal open={showTrade} onOpenChange={setShowTrade} gameState={gameState} currentPlayer={currentPlayer} onPropose={handleProposeTrade} />
+      <TradeModal open={showTrade} onOpenChange={setShowTrade} gameState={gameState} currentPlayer={currentPlayer} onPropose={handleProposeTrade} initial={tradeSeed} />
 
       <TradeOfferDialog gameState={gameState} canRespond={human(tradeToId)} onAccept={handleAcceptTrade} onDecline={handleDeclineTrade} />
 

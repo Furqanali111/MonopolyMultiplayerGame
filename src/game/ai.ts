@@ -325,12 +325,8 @@ export function shouldAIAcceptTrade(state: GameState, player: Player): boolean {
 
   const difficulty = player.difficulty || 'easy';
 
-  if (difficulty === 'easy') {
-    // Easy AI accepts randomly (40% chance)
-    return Math.random() < 0.4;
-  }
-
-  // Medium AI evaluates trade value
+  // Easy AI only compares sticker prices; medium and hard also weigh monopolies
+  const smart = difficulty !== 'easy';
   const fromPlayer = state.players.find(p => p.id === trade.fromPlayer);
   if (!fromPlayer) return false;
 
@@ -343,7 +339,7 @@ export function shouldAIAcceptTrade(state: GameState, player: Player): boolean {
     if (prop) {
       myValue += prop.price;
       // Extra value if I have monopoly
-      if (hasMonopoly(state, player.id, pos)) {
+      if (smart && hasMonopoly(state, player.id, pos)) {
         myValue += prop.price * 0.5; // 50% premium for breaking monopoly
       }
     }
@@ -358,7 +354,7 @@ export function shouldAIAcceptTrade(state: GameState, player: Player): boolean {
       theirValue += prop.price;
       
       // Check if this would complete a monopoly for me
-      if (prop.colorGroup) {
+      if (smart && prop.colorGroup) {
         const wouldComplete = prop.colorGroup.every(groupPos => {
           if (groupPos === pos) return true;
           const owned = state.ownedProperties.find(p => p.position === groupPos);
@@ -375,7 +371,7 @@ export function shouldAIAcceptTrade(state: GameState, player: Player): boolean {
   theirValue += trade.offeredCards * 50;
 
   // Accept if we're getting at least 90% fair value or completing a monopoly
-  return theirValue >= myValue * 0.9;
+  return theirValue >= myValue * (smart ? 0.9 : 1);
 }
 
 // Process full AI turn decision

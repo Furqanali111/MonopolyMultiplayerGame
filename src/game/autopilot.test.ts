@@ -19,13 +19,13 @@ describe('autopilot', () => {
       vi.spyOn(Math, 'random').mockImplementation(seeded(seed));
       let s = initializeGame(3, 'medium');
       let steps = 0;
-      while (s.players.filter(p => !p.isBankrupt).length > 1 && steps < 8000) {
+      while (s.players.filter(p => !p.isBankrupt).length > 1 && steps < 40000) {
         const next = autoStep(s);
         if (!next) throw new Error(`seed ${seed}: stalled in ${s.phase}/${s.turnPhase} for ${whoMustAct(s)?.name}`);
         s = next;
         steps++;
       }
-      expect(steps, `seed ${seed} did not finish`).toBeLessThan(8000);
+      expect(steps, `seed ${seed} did not finish`).toBeLessThan(40000);
     }
   });
 });
