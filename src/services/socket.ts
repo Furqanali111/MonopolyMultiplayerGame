@@ -212,6 +212,22 @@ export const toggleReady = (isReady: boolean): void => {
 /**
  * Host: fill a seat with a bot / remove one
  */
+export interface ChatMessage { from: string; username: string; text: string; at: number }
+export const sendChat = (text: string): void => {
+    socket?.emit('chat:send', { text });
+};
+export const onChatMessage = (cb: (m: ChatMessage) => void): void => {
+    socket?.on('chat:message', cb);
+};
+export const onChatHistory = (cb: (m: ChatMessage[]) => void): void => {
+    socket?.on('chat:history', cb);
+};
+export const requestRematch = (): void => {
+    socket?.emit('room:rematch', {});
+};
+export const onRematch = (cb: (data: { room: Room }) => void): void => {
+    socket?.on('room:rematch', cb);
+};
 export const setRules = (rules: HouseRules): void => {
     socket?.emit('room:setRules', { rules });
 };

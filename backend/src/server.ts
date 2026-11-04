@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { randomUUID } from 'crypto';
 
 // Load environment variables
@@ -36,6 +37,7 @@ import {
     canUnmortgage,
 } from '../../src/game/engine';
 import { DEFAULT_RULES, HouseRules, sanitizeRules } from '../../src/game/types';
+import { addEventsToStats, finalStandings } from '../../src/game/stats';
 import { diffEvents } from '../../src/game/events';
 import { autoStep, whoMustAct } from '../../src/game/autopilot';
 import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from '../../src/game/constants';
@@ -79,11 +81,13 @@ function publish(room: any, next: any) {
     next = applyWinCondition(next);
     room.gameState = next;
     room.version = (room.version || 0) + 1;
-    io.to(room.code).emit('game:stateUpdate', { gameState: next, events: diffEvents(prev, next), seq: room.version });
+    const events = diffEvents(prev, next);
+    addEventsToStats((room.stats ??= {}), events);
+    io.to(room.code).emit('game:stateUpdate', { gameState: next, events, seq: room.version });
     if (next.phase === 'gameover' && prev.phase !== 'gameover') {
         room.state = 'finished';
         stopAuto(room);
-        io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next });
+        io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next, standings: finalStandings(next, room.stats) });
         return;
     }
     scheduleAuto(room);
@@ -114,7 +118,7 @@ function scheduleAuto(room: any) {
     const seat = room.players.find((p: any) => p.id === actor.id);
     const away = !actor.isAI && !(seat && seat.isConnected);
     const stoodIn = room.autoplay?.has(actor.id);
-    const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? 1500 : TURN_MS;
+    const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? BOT_MS * 2 : TURN_MS;
     if (!delay) return; // timer disabled and a connected human is acting
 
     if (!actor.isAI && !stoodIn && !away) {
@@ -277,6 +281,7 @@ io.on('connection', (socket) => {
                 }
                 socket.join(room.code);
                 io.to(room.code).emit('room:updated', room);
+                socket.emit('chat:history', room.chat || []);
                 scheduleAuto(room);
             } else {
                 existing.roomCode = null;
@@ -463,11 +468,42 @@ io.on('connection', (socket) => {
         room.gameState = gameState;
         room.version = 0;
         room.autoplay = new Set();
+        room.stats = {};
 
         io.to(session.roomCode).emit('game:started', { gameState });
         scheduleAuto(room);
 
         console.log(`🎮 Game started in room ${session.roomCode} with ${room.players.length} players`);
+    });
+
+    // Chat: short, rate-limited text; the last 50 messages are kept for people who rejoin
+    socket.on('chat:send', ({ text }) => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        if (!room || typeof text !== 'string') return;
+        const clean = text.trim().slice(0, 200);
+        const now = Date.now();
+        if (!clean || now - (session.lastChat || 0) < 500) return;
+        session.lastChat = now;
+        const message = { from: session.userId, username: session.username, text: clean, at: now };
+        room.chat = [...(room.chat || []), message].slice(-50);
+        io.to(room.code).emit('chat:message', message);
+    });
+
+    // After a game: back to the lobby with the same people (and bots), ready flags cleared
+    socket.on('room:rematch', () => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        if (!room || room.hostId !== session.userId || room.state !== 'finished') return;
+        stopAuto(room);
+        room.players = room.players.filter((p: any) => p.isBot || p.isConnected);
+        room.players.forEach((p: any) => (p.isReady = !!p.isBot));
+        room.state = 'waiting';
+        room.gameState = null;
+        room.stats = {};
+        room.autoplay = new Set();
+        io.to(room.code).emit('room:updated', room);
+        io.to(room.code).emit('room:rematch', { room });
     });
 
     // Host picks the house rules in the lobby
@@ -649,6 +685,68 @@ function generateRoomCode(): string {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return code;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence: rooms and identities are snapshotted to a JSON file so a restart
+// doesn't end every game. shortcut: single-file snapshot every 2s (a crash can lose
+// the last couple of seconds); move to Redis/SQLite when running more than one server.
+// ---------------------------------------------------------------------------
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, '../../data/state.json');
+
+const serialise = () =>
+    JSON.stringify(
+        { rooms: [...rooms.values()], users: [...users.values()] },
+        (key, value) => (key === 'timer' ? undefined : value instanceof Set ? [...value] : value)
+    );
+
+let lastSaved = '';
+function saveState() {
+    try {
+        const data = serialise();
+        if (data === lastSaved) return;
+        fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+        fs.writeFileSync(DATA_FILE + '.tmp', data);
+        fs.renameSync(DATA_FILE + '.tmp', DATA_FILE); // atomic swap: never a half-written file
+        lastSaved = data;
+    } catch (err) {
+        console.error('⚠️ Could not save state:', err);
+    }
+}
+
+function loadState() {
+    try {
+        if (!fs.existsSync(DATA_FILE)) return;
+        const saved = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+        for (const room of saved.rooms || []) {
+            // Nobody is connected yet; bots always are
+            room.players.forEach((p: any) => {
+                p.isConnected = !!p.isBot;
+                p.socketId = null;
+            });
+            room.autoplay = new Set(room.autoplay || []);
+            rooms.set(room.code, room);
+        }
+        for (const user of saved.users || []) {
+            user.socketId = null;
+            users.set(user.token, user);
+            // Everyone gets the normal grace period to come back
+            user.timer = setTimeout(() => dropUser(user), GRACE_MS);
+        }
+        rooms.forEach((room) => scheduleAuto(room));
+        console.log(`♻️  Restored ${rooms.size} room(s) and ${users.size} player(s)`);
+    } catch (err) {
+        console.error('⚠️ Could not load saved state (starting empty):', err);
+    }
+}
+
+loadState();
+setInterval(saveState, 2000).unref();
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+        saveState();
+        process.exit(0);
+    });
 }
 
 // Start server
