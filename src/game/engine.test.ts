@@ -87,3 +87,25 @@ describe('jail and turn flow', () => {
     expect(s.winner).toBe("0");
   });
 });
+
+describe('house rules', () => {
+  const rules = { startingMoney: 3000, freeParkingPot: true };
+
+  it('starting money applies to every seat', () => {
+    expect(initializeGame(2, 'easy', rules).players.every(p => p.money === 3000)).toBe(true);
+  });
+
+  it('taxes feed the Free Parking pot and landing there collects it', () => {
+    const g = initializeGame(2, 'easy', rules);
+    const taxed = rollTurn(at(g, 0), [1, 3]); // Income Tax (4)
+    expect(taxed.freeParkingPot).toBe(200);
+    const collected = rollTurn(at({ ...taxed, currentPlayerIndex: 1 }, 14), [3, 3]); // 14 + 6 = Free Parking (20)
+    expect(collected.players[1].money).toBe(3200);
+    expect(collected.freeParkingPot).toBe(0);
+  });
+
+  it('without the rule nothing is pooled', () => {
+    const taxed = rollTurn(at(newGame(), 0), [1, 3]);
+    expect(taxed.freeParkingPot).toBe(0);
+  });
+});

@@ -1,22 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { initializeGame } from './engine';
 import { autoStep, whoMustAct } from './autopilot';
 
-// Autopilot playing every seat must always make progress and never throw.
+// Seeded random so a failure names a seed you can replay.
+const seeded = (seed: number) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+afterEach(() => vi.restoreAllMocks());
+
+// Autopilot playing every seat must always make progress and finish the game.
 describe('autopilot', () => {
   it('plays full games without stalling', () => {
-    for (let g = 0; g < 60; g++) {
+    for (let seed = 1; seed <= 60; seed++) {
+      vi.spyOn(Math, 'random').mockImplementation(seeded(seed));
       let s = initializeGame(3, 'medium');
       let steps = 0;
-      while (s.phase !== 'gameover' && steps < 5000) {
+      while (s.players.filter(p => !p.isBankrupt).length > 1 && steps < 8000) {
         const next = autoStep(s);
-        if (!next) throw new Error(`stalled in ${s.phase}/${s.turnPhase} for ${whoMustAct(s)?.name}`);
+        if (!next) throw new Error(`seed ${seed}: stalled in ${s.phase}/${s.turnPhase} for ${whoMustAct(s)?.name}`);
         s = next;
-        // end the game by elimination, or call it after enough turns
-        if (s.players.filter(p => !p.isBankrupt).length === 1) break;
         steps++;
       }
-      expect(steps).toBeLessThan(5000);
+      expect(steps, `seed ${seed} did not finish`).toBeLessThan(8000);
     }
   });
 });
