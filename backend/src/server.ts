@@ -36,6 +36,7 @@ import {
     canUnmortgage,
 } from '../../src/game/engine';
 import { DEFAULT_RULES, HouseRules, sanitizeRules } from '../../src/game/types';
+import { addEventsToStats, finalStandings } from '../../src/game/stats';
 import { diffEvents } from '../../src/game/events';
 import { autoStep, whoMustAct } from '../../src/game/autopilot';
 import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from '../../src/game/constants';
@@ -79,11 +80,13 @@ function publish(room: any, next: any) {
     next = applyWinCondition(next);
     room.gameState = next;
     room.version = (room.version || 0) + 1;
-    io.to(room.code).emit('game:stateUpdate', { gameState: next, events: diffEvents(prev, next), seq: room.version });
+    const events = diffEvents(prev, next);
+    addEventsToStats((room.stats ??= {}), events);
+    io.to(room.code).emit('game:stateUpdate', { gameState: next, events, seq: room.version });
     if (next.phase === 'gameover' && prev.phase !== 'gameover') {
         room.state = 'finished';
         stopAuto(room);
-        io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next });
+        io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next, standings: finalStandings(next, room.stats) });
         return;
     }
     scheduleAuto(room);
@@ -114,7 +117,7 @@ function scheduleAuto(room: any) {
     const seat = room.players.find((p: any) => p.id === actor.id);
     const away = !actor.isAI && !(seat && seat.isConnected);
     const stoodIn = room.autoplay?.has(actor.id);
-    const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? 1500 : TURN_MS;
+    const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? BOT_MS * 2 : TURN_MS;
     if (!delay) return; // timer disabled and a connected human is acting
 
     if (!actor.isAI && !stoodIn && !away) {
@@ -277,6 +280,7 @@ io.on('connection', (socket) => {
                 }
                 socket.join(room.code);
                 io.to(room.code).emit('room:updated', room);
+                socket.emit('chat:history', room.chat || []);
                 scheduleAuto(room);
             } else {
                 existing.roomCode = null;
@@ -463,11 +467,42 @@ io.on('connection', (socket) => {
         room.gameState = gameState;
         room.version = 0;
         room.autoplay = new Set();
+        room.stats = {};
 
         io.to(session.roomCode).emit('game:started', { gameState });
         scheduleAuto(room);
 
         console.log(`🎮 Game started in room ${session.roomCode} with ${room.players.length} players`);
+    });
+
+    // Chat: short, rate-limited text; the last 50 messages are kept for people who rejoin
+    socket.on('chat:send', ({ text }) => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        if (!room || typeof text !== 'string') return;
+        const clean = text.trim().slice(0, 200);
+        const now = Date.now();
+        if (!clean || now - (session.lastChat || 0) < 500) return;
+        session.lastChat = now;
+        const message = { from: session.userId, username: session.username, text: clean, at: now };
+        room.chat = [...(room.chat || []), message].slice(-50);
+        io.to(room.code).emit('chat:message', message);
+    });
+
+    // After a game: back to the lobby with the same people (and bots), ready flags cleared
+    socket.on('room:rematch', () => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        if (!room || room.hostId !== session.userId || room.state !== 'finished') return;
+        stopAuto(room);
+        room.players = room.players.filter((p: any) => p.isBot || p.isConnected);
+        room.players.forEach((p: any) => (p.isReady = !!p.isBot));
+        room.state = 'waiting';
+        room.gameState = null;
+        room.stats = {};
+        room.autoplay = new Set();
+        io.to(room.code).emit('room:updated', room);
+        io.to(room.code).emit('room:rematch', { room });
     });
 
     // Host picks the house rules in the lobby
