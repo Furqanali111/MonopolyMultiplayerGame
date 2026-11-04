@@ -291,6 +291,8 @@ export function buyProperty(state: GameState, playerId: number, position: number
       houses: 0,
       isMortgaged: false,
     }],
+    // Doubles earn another roll; otherwise the turn is over
+    turnPhase: player.doublesCount > 0 ? 'roll' : 'endturn',
     gameLog: [...state.gameLog, `${player.name} bought ${property.name} for $${property.price}`],
   };
 }
@@ -310,6 +312,7 @@ export function startAuction(state: GameState, position: number): GameState {
       currentBidder: null,
       participants: activePlayers,
       passedPlayers: [],
+      currentBidderIndex: 0, // Start with first participant
     },
     gameLog: [...state.gameLog, `Auction started for ${BOARD_TILES[position].name}!`],
   };
@@ -318,8 +321,22 @@ export function startAuction(state: GameState, position: number): GameState {
 export function placeBid(state: GameState, playerId: number, amount: number): GameState {
   if (!state.auction) return state;
 
+  // Verify it's this player's turn to bid
+  const activeBidders = state.auction.participants.filter(
+    id => !state.auction!.passedPlayers.includes(id)
+  );
+  const currentBidderId = activeBidders[state.auction.currentBidderIndex % activeBidders.length];
+
+  if (playerId !== currentBidderId) {
+    console.warn(`Player ${playerId} tried to bid but it's ${currentBidderId}'s turn`);
+    return state;
+  }
+
   const player = state.players.find(p => p.id === playerId);
   if (!player || amount > player.money || amount <= state.auction.currentBid) return state;
+
+  // Move to next bidder (wrap around)
+  const nextBidderIndex = (state.auction.currentBidderIndex + 1) % activeBidders.length;
 
   return {
     ...state,
@@ -327,6 +344,7 @@ export function placeBid(state: GameState, playerId: number, amount: number): Ga
       ...state.auction,
       currentBid: amount,
       currentBidder: playerId,
+      currentBidderIndex: nextBidderIndex,
     },
     gameLog: [...state.gameLog, `${player.name} bid $${amount}`],
   };
@@ -334,6 +352,17 @@ export function placeBid(state: GameState, playerId: number, amount: number): Ga
 
 export function passAuction(state: GameState, playerId: number): GameState {
   if (!state.auction) return state;
+
+  // Verify it's this player's turn to pass
+  const activeBidders = state.auction.participants.filter(
+    id => !state.auction!.passedPlayers.includes(id)
+  );
+  const currentBidderId = activeBidders[state.auction.currentBidderIndex % activeBidders.length];
+
+  if (playerId !== currentBidderId) {
+    console.warn(`Player ${playerId} tried to pass but it's ${currentBidderId}'s turn`);
+    return state;
+  }
 
   const player = state.players.find(p => p.id === playerId);
   const updatedPassedPlayers = [...state.auction.passedPlayers, playerId];
@@ -375,15 +404,25 @@ export function passAuction(state: GameState, playerId: number): GameState {
     return finalizeAuction(newState);
   }
 
-  // Continue auction - rotate participants
-  const newParticipants = [...stillActive];
+  // Continue auction - keep currentBidderIndex the same since we removed a player
+  // The index will automatically point to the next player after this one is removed
+  // But we need to make sure it doesn't go out of bounds
+  const currentIndexInActive = state.auction.currentBidderIndex % activeBidders.length;
+  let nextBidderIndex = currentIndexInActive;
+
+  // If the current bidder is the one passing, we stay at the same index
+  // (which will now point to the next player after removal)
+  // If we're at the last position, wrap to 0
+  if (nextBidderIndex >= stillActive.length) {
+    nextBidderIndex = 0;
+  }
 
   return {
     ...state,
     auction: {
       ...state.auction,
       passedPlayers: updatedPassedPlayers,
-      participants: newParticipants,
+      currentBidderIndex: nextBidderIndex,
     },
     gameLog: [...state.gameLog, `${player?.name} passed on the auction`],
   };
@@ -855,7 +894,8 @@ export function releaseFromJail(state: GameState, playerId: number, method: 'fin
   const updatedPlayers = [...state.players];
 
   let logMessage = '';
-  let newState = { ...state, players: updatedPlayers };
+  let chanceDeck = state.chanceDeck;
+  let communityChestDeck = state.communityChestDeck;
 
   if (method === 'fine') {
     updatedPlayers[playerIndex] = {
@@ -877,11 +917,11 @@ export function releaseFromJail(state: GameState, playerId: number, method: 'fin
     // Try Chance deck first, then Community Chest
     const chanceGoojf = CHANCE_CARDS.find(c => c.action === 'goojf');
     if (chanceGoojf && !state.chanceDeck.find(c => c.action === 'goojf')) {
-      newState.chanceDeck = [...state.chanceDeck, chanceGoojf];
+      chanceDeck = [...state.chanceDeck, chanceGoojf];
     } else {
       const communityGoojf = COMMUNITY_CHEST_CARDS.find(c => c.action === 'goojf');
       if (communityGoojf && !state.communityChestDeck.find(c => c.action === 'goojf')) {
-        newState.communityChestDeck = [...state.communityChestDeck, communityGoojf];
+        communityChestDeck = [...state.communityChestDeck, communityGoojf];
       }
     }
 
@@ -896,7 +936,10 @@ export function releaseFromJail(state: GameState, playerId: number, method: 'fin
   }
 
   return {
-    ...newState,
+    ...state,
+    players: updatedPlayers,
+    chanceDeck,
+    communityChestDeck,
     gameLog: [...state.gameLog, logMessage],
   };
 }
@@ -1416,4 +1459,83 @@ export function resolveTile(state: GameState, playerId: number): GameState {
   }
 
   return newState;
+}
+
+// ============================================================================
+// TURN FLOW (shared by single player and the server)
+// ============================================================================
+
+/** Roll for the current player: doubles count, 3 doubles = jail, move, resolve, extra roll. */
+export function rollTurn(state: GameState, dice: [number, number]): GameState {
+  const idx = state.currentPlayerIndex;
+  const player = state.players[idx];
+  const doubles = isDoubles(dice);
+  const doublesCount = doubles ? player.doublesCount + 1 : 0;
+
+  let s: GameState = {
+    ...state,
+    lastDiceRoll: dice,
+    players: state.players.map((p, i) => (i === idx ? { ...p, doublesCount } : p)),
+  };
+
+  if (doublesCount >= 3) {
+    s = sendToJail(s, player.id);
+    return { ...s, gameLog: [...s.gameLog, `${player.name} rolled three doubles and goes to jail!`] };
+  }
+
+  s = movePlayer(s, player.id, dice[0] + dice[1]);
+  s = resolveTile(s, player.id);
+
+  // Doubles: roll again, unless jailed or still waiting on a buy/auction decision
+  if (doubles && !s.players[idx].inJail && s.turnPhase === 'endturn') {
+    s = { ...s, turnPhase: 'roll', gameLog: [...s.gameLog, `${player.name} gets another turn for rolling doubles!`] };
+  }
+  return s;
+}
+
+/** Roll attempt for the current player while in jail. */
+export function rollForJailTurn(state: GameState, dice: [number, number]): GameState {
+  const player = state.players[state.currentPlayerIndex];
+  let s: GameState = { ...state, lastDiceRoll: dice };
+
+  if (isDoubles(dice)) {
+    s = releaseFromJail(s, player.id, 'doubles');
+    s = movePlayer(s, player.id, dice[0] + dice[1]);
+    return resolveTile(s, player.id);
+  }
+
+  s = incrementJailTurn(s, player.id);
+  return { ...s, turnPhase: 'endturn', gameLog: [...s.gameLog, `${player.name} failed to roll doubles`] };
+}
+
+/** Pay the fine / use a card to leave jail; the player then rolls normally. */
+export function leaveJail(state: GameState, playerId: number, method: 'fine' | 'card'): GameState {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player || !player.inJail) return state;
+  if (method === 'fine' && player.money < JAIL_FINE) return state;
+  if (method === 'card' && player.getOutOfJailCards < 1) return state;
+  return { ...releaseFromJail(state, playerId, method), turnPhase: 'roll' };
+}
+
+/** Pass the turn to the next active player. */
+export function endTurn(state: GameState): GameState {
+  const current = state.players[state.currentPlayerIndex];
+  const nextIndex = getNextPlayer(state);
+  const next = state.players[nextIndex];
+  return {
+    ...state,
+    players: state.players.map(p => (p.id === current.id ? { ...p, doublesCount: 0 } : p)),
+    currentPlayerIndex: nextIndex,
+    turnPhase: next.inJail ? 'injail' : 'roll',
+    currentCard: null,
+    lastDiceRoll: null,
+    specialRentMultiplier: null,
+    gameLog: [...state.gameLog, `${next.name}'s turn`],
+  };
+}
+
+/** Mark the game over once a single player is left. */
+export function applyWinCondition(state: GameState): GameState {
+  const winner = checkWinCondition(state);
+  return winner === null || state.phase === 'gameover' ? state : { ...state, phase: 'gameover', winner };
 }

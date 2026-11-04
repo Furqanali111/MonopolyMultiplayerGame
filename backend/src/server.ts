@@ -10,26 +10,31 @@ dotenv.config();
 
 // Import game engine
 import {
-    movePlayer,
-    resolveTile,
     buyProperty,
     startAuction,
     placeBid,
     passAuction,
-    finalizeAuction,
     buildHouse,
     sellHouse,
     mortgageProperty,
     unmortgageProperty,
-    releaseFromJail,
-    incrementJailTurn,
     proposeTrade,
     acceptTrade,
     declineTrade,
     declareBankruptcy,
     attemptPayment,
-} from './game/engine';
-import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from './game/constants';
+    rollTurn,
+    rollForJailTurn,
+    leaveJail,
+    endTurn,
+    applyWinCondition,
+    canBuyProperty,
+    canBuildHouse,
+    canSellHouse,
+    canMortgage,
+    canUnmortgage,
+} from '../../src/game/engine';
+import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from '../../src/game/constants';
 
 const app = express();
 const httpServer = createServer(app);
@@ -37,7 +42,7 @@ const httpServer = createServer(app);
 // Configure CORS
 const io = new Server(httpServer, {
     cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+        origin: process.env.FRONTEND_URL || 'http://localhost:8080',
         methods: ['GET', 'POST'],
         credentials: true,
     },
@@ -48,7 +53,7 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static files from React build (production)
-const frontendPath = path.join(__dirname, '../../dist');
+const frontendPath = path.join(__dirname, '../../../../dist');
 app.use(express.static(frontendPath));
 
 // Health check endpoint
@@ -340,489 +345,104 @@ io.on('connection', (socket) => {
     // ============================================================================
     // GAME ACTIONS
     // ============================================================================
-
-    socket.on('game:rollDice', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        // Verify it's this player's turn
-        if (currentPlayer.id !== session.userId) {
-            socket.emit('game:error', { message: 'Not your turn' });
-            return;
-        }
-
-        // If player is in jail, they should use 'game:rollForJail' instead
-        if (currentPlayer.inJail) {
-            socket.emit('game:error', { message: 'You are in jail. Use the jail actions to attempt escape.' });
-            return;
-        }
-
-        // Roll dice
-        const dice: [number, number] = [
-            Math.floor(Math.random() * 6) + 1,
-            Math.floor(Math.random() * 6) + 1
-        ];
-
-        gameState.lastDiceRoll = dice;
-        const diceSum = dice[0] + dice[1];
-
-        console.log(`🎲 ${currentPlayer.name} rolled ${dice[0]} and ${dice[1]}`);
-
-        // Use engine to move player (handles passing GO automatically)
-        // IMPORTANT: movePlayer expects player ID, not index!
-        gameState = movePlayer(gameState, currentPlayer.id, diceSum);
-
-        // Get the tile name for the new position from the UPDATED gameState
-        const updatedPlayer = gameState.players[gameState.currentPlayerIndex];
-        const newPosition = updatedPlayer.position;
-        const tileName = BOARD_TILES[newPosition]?.name || `Position ${newPosition}`;
-
-        // Add a log entry with the tile name
-        gameState.gameLog.push(`${currentPlayer.name} rolled ${dice[0]} and ${dice[1]}, landed on ${tileName}`);
-
-        // Use resolveTile to handle what happens when landing on this tile
-        // This handles: properties, chance/community chest, taxes, jail, etc.
-        // IMPORTANT: resolveTile also expects player ID, not index!
-        gameState = resolveTile(gameState, currentPlayer.id);
-
-        // Update room state
-        room.gameState = gameState;
-
-        // Broadcast updated state to all players
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-    });
-
-    socket.on('game:buyProperty', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        // Use game engine to buy property at current position
-        gameState = buyProperty(
-            gameState,
-            currentPlayer.id,
-            currentPlayer.position
-        );
-
-        // After buying, set turn phase to 'endturn' so player can end their turn
-        // (unless they rolled doubles, then they can roll again)
-        const updatedPlayer = gameState.players[gameState.currentPlayerIndex];
-        if (updatedPlayer.doublesCount > 0) {
-            gameState.turnPhase = 'roll';
-        } else {
-            gameState.turnPhase = 'endturn';
-        }
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`🏠 ${currentPlayer.name} bought property at position ${currentPlayer.position}`);
-    });
-
-    socket.on('game:declineProperty', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        // Start auction for the property using game engine
-        gameState = startAuction(gameState, currentPlayer.position);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`📢 Auction started for position ${currentPlayer.position}`);
-    });
-
-    socket.on('game:endTurn', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        // Reset turn phase for next player
-        gameState.turnPhase = 'roll';
-        gameState.currentCard = null;
-
-        // Move to next active (non-bankrupt) player
-        let nextIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
-        while (gameState.players[nextIndex].isBankrupt && nextIndex !== gameState.currentPlayerIndex) {
-            nextIndex = (nextIndex + 1) % gameState.players.length;
-        }
-
-        gameState.currentPlayerIndex = nextIndex;
-        const nextPlayer = gameState.players[nextIndex];
-        gameState.gameLog.push(`${nextPlayer.name}'s turn`);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`⏭️  Turn ended, now ${nextPlayer.name}'s turn`);
-    });
-
-    // ============================================================================
-    // PROPERTY MANAGEMENT
-    // ============================================================================
-
-    socket.on('game:buildHouse', ({ position }: { position: number }) => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        gameState = buildHouse(gameState, currentPlayer.id, position);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`🏗️  ${currentPlayer.name} built house at position ${position}`);
-    });
-
-    socket.on('game:sellHouse', ({ position }: { position: number }) => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        gameState = sellHouse(gameState, currentPlayer.id, position);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`💰 ${currentPlayer.name} sold house at position ${position}`);
-    });
-
-    socket.on('game:mortgage', ({ position }: { position: number }) => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        gameState = mortgageProperty(gameState, currentPlayer.id, position);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`🏦 ${currentPlayer.name} mortgaged property at position ${position}`);
-    });
-
-    socket.on('game:unmortgage', ({ position }: { position: number }) => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        gameState = unmortgageProperty(gameState, currentPlayer.id, position);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`🔓 ${currentPlayer.name} unmortgaged property at position ${position}`);
-    });
-
-    // ============================================================================
-    // AUCTION SYSTEM
-    // ============================================================================
-
-    socket.on('game:placeBid', ({ amount }: { amount: number }) => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-
-        console.log(`🔍 AUCTION BID DEBUG:`);
-        console.log(`  - Socket ID: ${socket.id}`);
-        console.log(`  - Session User ID: ${session.userId}`);
-        console.log(`  - Session Username: ${session.username}`);
-        console.log(`  - Bid Amount: $${amount}`);
-        console.log(`  - Current Auction State:`, gameState.auction);
-
-        // Find this player's ID
-        const player = gameState.players.find((p: any) => p.id === session.userId);
-        if (!player) {
-            console.log(`❌ Player not found for userId: ${session.userId}`);
-            return;
-        }
-
-        console.log(`  - Found Player:`, { id: player.id, name: player.name });
-
-        gameState = placeBid(gameState, session.userId, amount);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`💰 ${player.name} bid $${amount}`);
-    });
-
-    socket.on('game:passAuction', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-
-        const player = gameState.players.find((p: any) => p.id === session.userId);
-        if (!player) return;
-
-        gameState = passAuction(gameState, session.userId);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`👋 ${player.name} passed on auction`);
-    });
-
-    // ============================================================================
-    // JAIL ACTIONS
-    // ============================================================================
-
-    socket.on('game:payJailFine', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        gameState = releaseFromJail(gameState, currentPlayer.id, 'fine');
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`💵 ${currentPlayer.name} paid jail fine`);
-    });
-
-    socket.on('game:useJailCard', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        gameState = releaseFromJail(gameState, currentPlayer.id, 'card');
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`🎴 ${currentPlayer.name} used Get Out of Jail Free card`);
-    });
-
-    socket.on('game:rollForJail', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-        const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-        if (currentPlayer.id !== session.userId) return;
-
-        // Roll dice
-        const dice: [number, number] = [
-            Math.floor(Math.random() * 6) + 1,
-            Math.floor(Math.random() * 6) + 1
-        ];
-        gameState.lastDiceRoll = dice;
-
-        // Check if doubles
-        if (dice[0] === dice[1]) {
-            // Released from jail!
-            gameState = releaseFromJail(gameState, currentPlayer.id, 'doubles');
-            console.log(`🎲 ${currentPlayer.name} rolled doubles (${dice[0]}, ${dice[1]}) and escaped jail!`);
-
-            // Move the player
-            const diceSum = dice[0] + dice[1];
-            gameState = movePlayer(gameState, currentPlayer.id, diceSum);
-            gameState = resolveTile(gameState, currentPlayer.id);
-        } else {
-            // Increment jail turn count
-            gameState = incrementJailTurn(gameState, currentPlayer.id);
-            console.log(`🎲 ${currentPlayer.name} rolled (${dice[0]}, ${dice[1]}) - not doubles, still in jail`);
-
-            // End their turn since they didn't escape
-            gameState.turnPhase = 'endturn';
-        }
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-    });
-
-    // ============================================================================
-    // TRADING
-    // ============================================================================
-
-    socket.on('game:proposeTrade', ({ trade }: { trade: any }) => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-
-        const fromIndex = gameState.players.findIndex((p: any) => p.id === session.userId);
-        if (fromIndex === -1) return;
-
-        gameState = proposeTrade(gameState, {
-            fromPlayer: fromIndex,
-            toPlayer: trade.toPlayerId,
-            offeredProperties: trade.offeredProperties || [],
-            offeredMoney: trade.offeredMoney || 0,
-            offeredCards: trade.offeredCards || 0,
-            requestedProperties: trade.requestedProperties || [],
-            requestedMoney: trade.requestedMoney || 0,
-            requestedCards: trade.requestedCards || 0,
+    // Every action goes through game(): it finds the room, checks the game phase,
+    // checks the acting player, runs the shared engine, then broadcasts the result.
+
+    type Ctx = { gs: any; me: any; current: any };
+    type Rule = {
+        phase?: string;              // required gameState.phase (default 'playing')
+        turnPhase?: string;          // required turnPhase
+        currentOnly?: boolean;       // only the player whose turn it is
+        who?: (c: Ctx) => number | undefined; // the one player allowed to act
+    };
+
+    function game(event: string, rule: Rule, run: (c: Ctx, data: any) => any) {
+        socket.on(event, (data: any = {}) => {
+            const session = sessions.get(socket.id);
+            const room = session?.roomCode && rooms.get(session.roomCode);
+            if (!room || room.state !== 'playing' || !room.gameState) return;
+
+            const gs = room.gameState;
+            const me = gs.players.find((p: any) => p.id === session.userId);
+            const c: Ctx = { gs, me, current: gs.players[gs.currentPlayerIndex] };
+            const reject = (message: string) => socket.emit('game:error', { message });
+
+            if (!me || me.isBankrupt) return reject('You are not in this game');
+            if (gs.phase !== (rule.phase ?? 'playing')) return reject(`Not allowed during ${gs.phase}`);
+            if (rule.currentOnly && c.current.id !== me.id) return reject('Not your turn');
+            if (rule.turnPhase && gs.turnPhase !== rule.turnPhase) return reject(`Not allowed now (${gs.turnPhase})`);
+            if (rule.who && rule.who(c) !== me.id) return reject('Not your decision');
+
+            let next = run(c, data);
+            if (!next || next === gs) return reject('Action not allowed');
+
+            next = applyWinCondition(next);
+            room.gameState = next;
+            io.to(room.code).emit('game:stateUpdate', { gameState: next });
+            if (next.phase === 'gameover' && gs.phase !== 'gameover') {
+                room.state = 'finished';
+                io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next });
+            }
         });
+    }
 
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
+    const rollDie = () => Math.floor(Math.random() * 6) + 1;
+    const rollTwo = (): [number, number] => [rollDie(), rollDie()];
 
-        console.log(`🤝 ${gameState.players[fromIndex].name} proposed a trade`);
+    // Turn flow
+    game('game:rollDice', { currentOnly: true, turnPhase: 'roll' }, ({ gs }) => rollTurn(gs, rollTwo()));
+    game('game:rollForJail', { currentOnly: true, turnPhase: 'injail' }, ({ gs }) => rollForJailTurn(gs, rollTwo()));
+    game('game:payJailFine', { currentOnly: true, turnPhase: 'injail' }, ({ gs, me }) => leaveJail(gs, me.id, 'fine'));
+    game('game:useJailCard', { currentOnly: true, turnPhase: 'injail' }, ({ gs, me }) => leaveJail(gs, me.id, 'card'));
+    game('game:endTurn', { currentOnly: true, turnPhase: 'endturn' }, ({ gs }) => endTurn(gs));
+
+    // Property purchase
+    game('game:buyProperty', { currentOnly: true, turnPhase: 'action' }, ({ gs, me }) =>
+        canBuyProperty(gs, me.id, me.position) ? buyProperty(gs, me.id, me.position) : null);
+    game('game:declineProperty', { currentOnly: true, turnPhase: 'action' }, ({ gs, me }) =>
+        startAuction(gs, me.position));
+
+    // Property management (current player, any point in their turn)
+    game('game:buildHouse', { currentOnly: true }, ({ gs, me }, { position }) =>
+        canBuildHouse(gs, me.id, position) ? buildHouse(gs, me.id, position) : null);
+    game('game:sellHouse', { currentOnly: true }, ({ gs, me }, { position }) =>
+        canSellHouse(gs, me.id, position) ? sellHouse(gs, me.id, position) : null);
+    game('game:mortgage', { currentOnly: true }, ({ gs, me }, { position }) =>
+        canMortgage(gs, me.id, position) ? mortgageProperty(gs, me.id, position) : null);
+    game('game:unmortgage', { currentOnly: true }, ({ gs, me }, { position }) =>
+        canUnmortgage(gs, me.id, position) ? unmortgageProperty(gs, me.id, position) : null);
+
+    // Auction (engine enforces whose bid it is)
+    game('game:placeBid', { phase: 'auction' }, ({ gs, me }, { amount }) =>
+        Number.isFinite(amount) ? placeBid(gs, me.id, amount) : null);
+    game('game:passAuction', { phase: 'auction' }, ({ gs, me }) => passAuction(gs, me.id));
+
+    // Trading: only the proposer proposes, only the recipient answers
+    game('game:proposeTrade', { currentOnly: true }, ({ gs, me }, { offer }) => {
+        if (!offer) return null;
+        const next = proposeTrade(gs, {
+            fromPlayer: me.id,
+            toPlayer: offer.toPlayer,
+            offeredProperties: offer.offeredProperties || [],
+            offeredMoney: Math.max(0, Number(offer.offeredMoney) || 0),
+            offeredCards: Math.max(0, Number(offer.offeredCards) || 0),
+            requestedProperties: offer.requestedProperties || [],
+            requestedMoney: Math.max(0, Number(offer.requestedMoney) || 0),
+            requestedCards: Math.max(0, Number(offer.requestedCards) || 0),
+        });
+        return next.phase === 'trade' ? next : null;
     });
+    game('game:acceptTrade', { phase: 'trade', who: ({ gs }) => gs.trade?.toPlayer }, ({ gs }) => acceptTrade(gs));
+    game('game:declineTrade', { phase: 'trade', who: ({ gs }) => gs.trade?.toPlayer }, ({ gs }) => declineTrade(gs));
 
-    socket.on('game:acceptTrade', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-
-        gameState = acceptTrade(gameState);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`✅ Trade accepted`);
+    // Bankruptcy: only the player who owes
+    game('game:attemptPayment', { phase: 'bankruptcy', who: ({ gs }) => gs.bankruptcyState?.playerId }, ({ gs }) => {
+        const b = gs.bankruptcyState;
+        return attemptPayment(gs, b.playerId, b.amountOwed, b.creditorId, b.reason);
     });
-
-    socket.on('game:declineTrade', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-
-        gameState = declineTrade(gameState);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`❌ Trade declined`);
-    });
-
-    // ============================================================================
-    // BANKRUPTCY
-    // ============================================================================
-
-    socket.on('game:declareBankruptcy', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-
-        if (!gameState.bankruptcyState) return;
-
-        const { playerId, creditorId } = gameState.bankruptcyState;
-
-        gameState = declareBankruptcy(gameState, playerId, creditorId);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`💔 Player ${playerId} declared bankruptcy`);
-    });
-
-    socket.on('game:attemptPayment', () => {
-        const session = sessions.get(socket.id);
-        if (!session || !session.roomCode) return;
-
-        const room = rooms.get(session.roomCode);
-        if (!room || room.state !== 'playing' || !room.gameState) return;
-
-        let gameState = room.gameState;
-
-        if (!gameState.bankruptcyState) return;
-
-        const { playerId, amountOwed, creditorId, reason } = gameState.bankruptcyState;
-
-        gameState = attemptPayment(gameState, playerId, amountOwed, creditorId, reason);
-
-        room.gameState = gameState;
-        io.to(session.roomCode).emit('game:stateUpdate', { gameState });
-
-        console.log(`💰 Player ${playerId} attempted payment`);
+    game('game:declareBankruptcy', { phase: 'bankruptcy', who: ({ gs }) => gs.bankruptcyState?.playerId }, ({ gs }) => {
+        const b = gs.bankruptcyState;
+        return declareBankruptcy(gs, b.playerId, b.creditorId);
     });
 
     // ============================================================================
@@ -873,5 +493,5 @@ const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📡 WebSocket server ready`);
-    console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+    console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:8080'}`);
 });
