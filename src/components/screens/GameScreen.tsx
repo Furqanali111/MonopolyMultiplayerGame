@@ -72,7 +72,7 @@ import { ChipFlights } from '@/components/game/ChipFlights';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRODUCT_NAME } from '@/lib/brand';
-import { isMuted, playChange, setMuted } from '@/services/sound';
+import { isMuted, play, playChange, rollSound, setMuted } from '@/services/sound';
 
 /** How long a card someone else drew stays up, unless dismissed first */
 const CARD_READ_MS = 15_000;
@@ -223,11 +223,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   };
 
   const handleRollDice = useCallback(() => {
+    rollSound();
     if (isMultiplayer) return rollDiceSocket();
     rollWithDelay(rollTurn);
   }, [isRolling, isMultiplayer]);
 
   const handleRollForJail = useCallback(() => {
+    rollSound();
     if (isMultiplayer) return rollForJailSocket();
     rollWithDelay(rollForJailTurn);
   }, [isRolling, isMultiplayer]);
@@ -377,7 +379,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const tabs: [string, string][] = [['players', 'Players'], ['log', 'Log'], ...(isMultiplayer ? [['chat', 'Chat'] as [string, string]] : [])];
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="min-h-dvh bg-background" onPointerDownCapture={(e) => (e.target as HTMLElement).closest?.('button') && play('tap')}>
       <header className="sticky top-0 z-30 border-b border-border bg-background">
         <div className="mx-auto flex h-12 max-w-[1500px] items-center gap-2 px-3 md:px-4">
           {onBackToMenu && (
