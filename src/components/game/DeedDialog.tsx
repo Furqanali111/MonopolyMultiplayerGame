@@ -1,8 +1,8 @@
 import React from 'react';
-import { ArrowRightLeft } from 'lucide-react';
+import { ArrowRightLeft, Hammer, Lock, Undo2, Unlock } from 'lucide-react';
 import { GameState } from '@/game/types';
 import { BOARD_TILES } from '@/game/constants';
-import { getPropertyData, getPropertyOwner } from '@/game/engine';
+import { canBuildHouse, canMortgage, canSellHouse, canUnmortgage, getPropertyData, getPropertyOwner, hasMonopoly } from '@/game/engine';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Pawn, PROPERTY_HEX, PROPERTY_LABEL, readableOn } from '@/components/game/kit';
@@ -16,12 +16,20 @@ interface DeedDialogProps {
   viewerId?: string;
   /** Why an offer cannot be sent right now; the button is shown but disabled */
   offerBlocked?: string;
+  /** Build, sell and mortgage on the viewer's own deeds; `blocked` says why they are off */
+  manage?: {
+    blocked?: string;
+    onBuild: (position: number) => void;
+    onSell: (position: number) => void;
+    onMortgage: (position: number) => void;
+    onUnmortgage: (position: number) => void;
+  };
 }
 
 const RENT_LABELS = ['Rent', 'With a full set', 'With 1 house', 'With 2 houses', 'With 3 houses', 'With 4 houses', 'With a hotel'];
 
 /** The title deed for any tile, opened by tapping it on the board. */
-export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onClose, onOffer, viewerId }) => {
+export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onClose, onOffer, viewerId, offerBlocked, manage }) => {
   if (position === null) return null;
   const tile = BOARD_TILES[position];
   const property = getPropertyData(position);
@@ -106,10 +114,56 @@ export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onC
               {(tile.type === 'chance' || tile.type === 'community') && 'Draw a card and follow it.'}
             </p>
           )}
+          {manage && owned && owner && owner.id === viewerId && property && (() => {
+            const can = !manage.blocked;
+            const build = can && canBuildHouse(gameState, owner.id, owned.position);
+            const sell = can && canSellHouse(gameState, owner.id, owned.position);
+            const mortgage = can && canMortgage(gameState, owner.id, owned.position);
+            const unmortgage = can && canUnmortgage(gameState, owner.id, owned.position);
+            const why =
+              manage.blocked ??
+              (property.type !== 'property' || build
+                ? undefined
+                : owned.houses === 5
+                  ? 'Fully built.'
+                  : !hasMonopoly(gameState, owner.id, owned.position)
+                    ? 'Own the whole colour set to build.'
+                    : 'To build you need the cash, no mortgage in the set, and an even number of houses across it.');
+            return (
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap gap-2">
+                  {build && (
+                    <Button className="flex-1" onClick={() => manage.onBuild(owned.position)}>
+                      <Hammer /> {owned.houses === 4 ? 'Build hotel' : 'Build house'} ${property.houseCost}
+                    </Button>
+                  )}
+                  {sell && (
+                    <Button variant="outline" className="flex-1" onClick={() => manage.onSell(owned.position)}>
+                      <Undo2 /> Sell ${Math.floor(property.houseCost! / 2)}
+                    </Button>
+                  )}
+                  {mortgage && (
+                    <Button variant="outline" className="flex-1" onClick={() => manage.onMortgage(owned.position)}>
+                      <Lock /> Mortgage ${property.mortgageValue}
+                    </Button>
+                  )}
+                  {unmortgage && (
+                    <Button variant="outline" className="flex-1" onClick={() => manage.onUnmortgage(owned.position)}>
+                      <Unlock /> Unmortgage ${Math.floor(property.mortgageValue * 1.1)}
+                    </Button>
+                  )}
+                </div>
+                {why && <p className="text-center text-[12px] text-muted-foreground">{why}</p>}
+              </div>
+            );
+          })()}
           {onOffer && owned && owner && owner.id !== viewerId && !owned.isMortgaged && owned.houses === 0 && (
-            <Button className="w-full" onClick={() => onOffer(owner.id, owned.position)}>
-              <ArrowRightLeft /> Make an offer to {owner.name}
-            </Button>
+            <div>
+              <Button className="w-full" disabled={!!offerBlocked} onClick={() => onOffer(owner.id, owned.position)}>
+                <ArrowRightLeft /> Make an offer to {owner.name}
+              </Button>
+              {offerBlocked && <p className="mt-1.5 text-center text-[12px] text-muted-foreground">{offerBlocked}</p>}
+            </div>
           )}
           <Button variant="secondary" className="w-full" onClick={onClose}>
             Close

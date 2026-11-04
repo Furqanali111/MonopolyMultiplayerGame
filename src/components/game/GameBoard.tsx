@@ -104,6 +104,23 @@ function iconFor(tile: Tile, position: number) {
   return SPECIAL_ICON[tile.type] ?? null;
 }
 
+const GLYPH = { width: 'clamp(7px,1.7cqw,15px)', height: 'clamp(7px,1.7cqw,15px)' };
+
+/** A small house: pitched roof, green like the board game's own. */
+const House = () => (
+  <svg viewBox="0 0 12 12" style={GLYPH} aria-hidden>
+    <path d="M6 1.2 11.2 6H9.6v4.8H2.4V6H.8z" fill="#3DD68C" stroke="#0E1116" strokeWidth="1" strokeLinejoin="round" />
+  </svg>
+);
+
+/** A hotel: a taller, wider block with windows, in ruby. */
+const Hotel = () => (
+  <svg viewBox="0 0 12 12" style={{ ...GLYPH, width: 'clamp(9px,2.2cqw,19px)' }} aria-hidden>
+    <path d="M1 3h10v7.8H1z" fill="#E5566D" stroke="#0E1116" strokeWidth="1" strokeLinejoin="round" />
+    <path d="M3.2 5.2h1.4v1.4H3.2zm4.2 0h1.4v1.4H7.4zM5.3 8h1.4v2.8H5.3z" fill="#0E1116" />
+  </svg>
+);
+
 const BAND: Record<Exclude<Orientation, 'corner'>, string> = {
   top: 'bottom-0 inset-x-0 h-[27%] flex-row',
   bottom: 'top-0 inset-x-0 h-[27%] flex-row',
@@ -156,17 +173,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
           className={cn('absolute flex items-center justify-center gap-[2px]', BAND[orientation])}
           style={{ background: PROPERTY_HEX[group!] }}
         >
-          {houses === 5 ? (
-            <span className="block rounded-[1px] bg-ruby" style={{ width: 'clamp(7px,1.8cqw,16px)', height: 'clamp(4px,1cqw,9px)' }} />
-          ) : (
-            Array.from({ length: houses }).map((_, i) => (
-              <span
-                key={i}
-                className="block rounded-[1px] bg-bone"
-                style={{ width: 'clamp(3px,.8cqw,7px)', height: 'clamp(3px,.8cqw,7px)', boxShadow: '0 0 0 1px rgba(14,17,22,.65)' }}
-              />
-            ))
-          )}
+          {houses === 5 ? <Hotel /> : Array.from({ length: houses }).map((_, i) => <House key={i} />)}
         </span>
       )}
 
