@@ -17,6 +17,7 @@ import { GameState, Player } from '@/game/types';
 import { BOARD_TILES } from '@/game/constants';
 import { Pawn, PROPERTY_HEX } from '@/components/game/kit';
 import Noise from '@/components/Noise';
+import { Building } from '@/components/game/Building';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
 
@@ -104,23 +105,6 @@ function iconFor(tile: Tile, position: number) {
   return SPECIAL_ICON[tile.type] ?? null;
 }
 
-const GLYPH = { width: 'clamp(7px,1.7cqw,15px)', height: 'clamp(7px,1.7cqw,15px)' };
-
-/** A small house: pitched roof, green like the board game's own. */
-const House = () => (
-  <svg viewBox="0 0 12 12" style={GLYPH} aria-hidden>
-    <path d="M6 1.2 11.2 6H9.6v4.8H2.4V6H.8z" fill="#3DD68C" stroke="#0E1116" strokeWidth="1" strokeLinejoin="round" />
-  </svg>
-);
-
-/** A hotel: a taller, wider block with windows, in ruby. */
-const Hotel = () => (
-  <svg viewBox="0 0 12 12" style={{ ...GLYPH, width: 'clamp(9px,2.2cqw,19px)' }} aria-hidden>
-    <path d="M1 3h10v7.8H1z" fill="#E5566D" stroke="#0E1116" strokeWidth="1" strokeLinejoin="round" />
-    <path d="M3.2 5.2h1.4v1.4H3.2zm4.2 0h1.4v1.4H7.4zM5.3 8h1.4v2.8H5.3z" fill="#0E1116" />
-  </svg>
-);
-
 const BAND: Record<Exclude<Orientation, 'corner'>, string> = {
   top: 'bottom-0 inset-x-0 h-[27%] flex-row',
   bottom: 'top-0 inset-x-0 h-[27%] flex-row',
@@ -151,13 +135,18 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
   const houses = owned?.houses ?? 0;
   const { col, row } = cellOf(position);
   const label = shortName(tile.name);
+  // False while the board first draws, so existing buildings appear at once and only new ones animate
+  const settled = useRef(false);
+  useEffect(() => {
+    settled.current = true;
+  }, []);
 
   return (
     <button
       type="button"
       data-tile={position}
       onClick={onClick}
-      aria-label={`${tile.name}${property ? `, $${property.price}` : ''}${owner ? `, owned by ${owner.name}` : ''}`}
+      aria-label={`${tile.name}${property ? `, $${property.price}` : ''}${owner ? `, owned by ${owner.name}` : ''}${houses ? (houses === 5 ? ', hotel' : `, ${houses} house${houses > 1 ? 's' : ''}`) : ''}`}
       className={cn(
         'group relative min-h-0 min-w-0 overflow-hidden border border-border/80 bg-card text-foreground transition-colors duration-150 hover:bg-raised focus-visible:z-10',
         owned?.isMortgaged && 'opacity-50'
@@ -173,7 +162,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
           className={cn('absolute flex items-center justify-center gap-[2px]', BAND[orientation])}
           style={{ background: PROPERTY_HEX[group!] }}
         >
-          {houses === 5 ? <Hotel /> : Array.from({ length: houses }).map((_, i) => <House key={i} />)}
+          {houses > 0 && <Building houses={houses} animate={settled.current} />}
         </span>
       )}
 
