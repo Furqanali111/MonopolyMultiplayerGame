@@ -8,6 +8,7 @@ import {
   canBuyProperty,
   canBuildHouse,
   canMortgage,
+  canUnmortgage,
   canSellHouse,
   hasMonopoly,
   calculatePlayerNetWorth,
@@ -412,6 +413,18 @@ export function processAITurn(state: GameState, player: Player): AIDecision {
     default:
       return { action: 'end_turn' };
   }
+}
+
+// Lift a mortgage once there is comfortable cash left over. Tiles in a full colour set go first,
+// since a mortgage anywhere in a set blocks building on all of it.
+export function getAIUnmortgage(state: GameState, player: Player): number | null {
+  const reserve = player.difficulty === 'easy' ? 500 : 300;
+  const options = getPlayerProperties(state, player.id)
+    .filter(o => canUnmortgage(state, player.id, o.position))
+    .map(o => ({ pos: o.position, cost: Math.floor(getPropertyData(o.position)!.mortgageValue * 1.1), set: hasMonopoly(state, player.id, o.position) }))
+    .filter(o => player.money - o.cost >= reserve)
+    .sort((a, b) => Number(b.set) - Number(a.set) || b.cost - a.cost);
+  return options.length ? options[0].pos : null;
 }
 
 // Offer cash to the single player who owns the tiles missing from a colour set we mostly hold.
