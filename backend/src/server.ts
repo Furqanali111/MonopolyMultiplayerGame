@@ -103,6 +103,7 @@ function publish(room: any, next: any) {
 const TURN_MS = Number(process.env.TURN_TIMEOUT_MS ?? 90_000);        // 0 disables the timer
 const OFFLINE_TURN_MS = Number(process.env.OFFLINE_TURN_MS ?? 10_000);
 const BOT_MS = Number(process.env.BOT_DELAY_MS ?? 1900);
+const ROLL_MS = 700; // how long the dice visibly tumble before an automatic roll lands
 
 // Timers live here, not on the room: a room object is sent to clients and a Timeout is circular.
 const autoTimers = new Map<string, NodeJS.Timeout>();
@@ -129,7 +130,7 @@ function scheduleAuto(room: any) {
     }
 
     const version = room.version;
-    autoTimers.set(room.code, setTimeout(() => {
+    const act = () => {
         if (room.version !== version || room.state !== 'playing') return; // something happened meanwhile
         const next = autoStep(room.gameState);
         if (!next) return;
@@ -138,7 +139,15 @@ function scheduleAuto(room: any) {
             io.to(room.code).emit('game:autoplayed', { playerId: actor.id });
         }
         publish(room, next);
-    }, delay));
+    };
+    // An automatic roll tumbles the dice first, so the rattle is heard when the dice roll, not as the pawn moves
+    const rolls = room.gameState.phase === 'playing' && room.gameState.turnPhase === 'roll' && delay > ROLL_MS;
+    autoTimers.set(room.code, setTimeout(() => {
+        if (!rolls) return act();
+        if (room.version !== version || room.state !== 'playing') return;
+        io.to(room.code).emit('game:rolling', { playerId: actor.id });
+        autoTimers.set(room.code, setTimeout(act, ROLL_MS));
+    }, rolls ? delay - ROLL_MS : delay));
 }
 
 const humans = (room: any) => room.players.filter((p: any) => !p.isBot);
