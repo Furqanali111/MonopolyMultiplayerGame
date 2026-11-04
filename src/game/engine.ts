@@ -1417,7 +1417,8 @@ export function resolveTile(state: GameState, playerId: PlayerId): GameState {
 
   switch (tile.type) {
     case 'go':
-      // Already handled by movement
+      // The $200 is paid by movement; the turn just has to end here
+      newState.turnPhase = 'endturn';
       break;
 
     case 'property':
