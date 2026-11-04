@@ -35,6 +35,7 @@ import {
     canMortgage,
     canUnmortgage,
 } from '../../src/game/engine';
+import { autoStep, whoMustAct } from '../../src/game/autopilot';
 import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from '../../src/game/constants';
 
 const app = express();
@@ -75,16 +76,65 @@ function publish(room: any, next: any) {
     const prev = room.gameState;
     next = applyWinCondition(next);
     room.gameState = next;
+    room.version = (room.version || 0) + 1;
     io.to(room.code).emit('game:stateUpdate', { gameState: next });
     if (next.phase === 'gameover' && prev.phase !== 'gameover') {
         room.state = 'finished';
+        clearTimeout(room.autoTimer);
         io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next });
+        return;
     }
+    scheduleAuto(room);
+}
+
+// ---------------------------------------------------------------------------
+// Autopilot: bots play, and humans who run out of time or are offline get a
+// stand-in decision so the table never waits forever.
+// ---------------------------------------------------------------------------
+const TURN_MS = Number(process.env.TURN_TIMEOUT_MS ?? 90_000);        // 0 disables the timer
+const OFFLINE_TURN_MS = Number(process.env.OFFLINE_TURN_MS ?? 10_000);
+const BOT_MS = Number(process.env.BOT_DELAY_MS ?? 900);
+
+function scheduleAuto(room: any) {
+    clearTimeout(room.autoTimer);
+    if (room.state !== 'playing' || !room.gameState) return;
+
+    const actor = whoMustAct(room.gameState);
+    if (!actor) return;
+
+    const seat = room.players.find((p: any) => p.id === actor.id);
+    const away = !actor.isAI && !(seat && seat.isConnected);
+    const stoodIn = room.autoplay?.has(actor.id);
+    const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? 1500 : TURN_MS;
+    if (!delay) return; // timer disabled and a connected human is acting
+
+    if (!actor.isAI && !stoodIn && !away) {
+        io.to(room.code).emit('game:deadline', { playerId: actor.id, at: Date.now() + delay });
+    }
+
+    const version = room.version;
+    room.autoTimer = setTimeout(() => {
+        if (room.version !== version || room.state !== 'playing') return; // something happened meanwhile
+        const next = autoStep(room.gameState);
+        if (!next) return;
+        if (!actor.isAI) {
+            (room.autoplay ??= new Set()).add(actor.id);
+            io.to(room.code).emit('game:autoplayed', { playerId: actor.id });
+        }
+        publish(room, next);
+    }, delay);
+}
+
+const humans = (room: any) => room.players.filter((p: any) => !p.isBot);
+function closeRoom(room: any) {
+    clearTimeout(room.autoTimer);
+    rooms.delete(room.code);
+    console.log(`🗑️ Room deleted: ${room.code}`);
 }
 
 // shortcut: host is handed to the first connected player automatically (no accept/timeout offer)
 function migrateHost(room: any) {
-    const next = room.players.find((p: any) => p.isConnected && p.id !== room.hostId);
+    const next = room.players.find((p: any) => !p.isBot && p.isConnected && p.id !== room.hostId);
     if (!next) return;
     room.players.forEach((p: any) => (p.isHost = p.id === next.id));
     room.hostId = next.id;
@@ -116,13 +166,12 @@ function removePlayer(room: any, userId: string) {
     if (room.state === 'playing') forfeit(room, userId);
     room.players = room.players.filter((p: any) => p.id !== userId);
 
-    if (room.players.length === 0) {
-        rooms.delete(room.code);
-        console.log(`🗑️ Room deleted: ${room.code}`);
+    if (humans(room).length === 0) {
+        closeRoom(room);
         return;
     }
     if (room.hostId === userId) {
-        const next = room.players.find((p: any) => p.isConnected) || room.players[0];
+        const next = humans(room).find((p: any) => p.isConnected) || humans(room)[0];
         room.players.forEach((p: any) => (p.isHost = p.id === next.id));
         room.hostId = next.id;
         io.to(room.code).emit('host:migrated', { newHostId: next.id, newHostName: next.username });
@@ -150,7 +199,8 @@ function initializeMultiplayerGame(roomPlayers: any[]) {
         color: roomPlayer.color,
         money: 1500,
         position: 0,
-        isAI: false,
+        isAI: !!roomPlayer.isBot,
+        ...(roomPlayer.isBot ? { difficulty: 'medium' } : {}),
         inJail: false,
         jailTurns: 0,
         getOutOfJailCards: 0,
@@ -216,6 +266,7 @@ io.on('connection', (socket) => {
                 }
                 socket.join(room.code);
                 io.to(room.code).emit('room:updated', room);
+                scheduleAuto(room);
             } else {
                 existing.roomCode = null;
             }
@@ -398,10 +449,46 @@ io.on('connection', (socket) => {
         // Initialize game state from room players
         const gameState = initializeMultiplayerGame(room.players);
         room.gameState = gameState;
+        room.version = 0;
+        room.autoplay = new Set();
 
         io.to(session.roomCode).emit('game:started', { gameState });
+        scheduleAuto(room);
 
         console.log(`🎮 Game started in room ${session.roomCode} with ${room.players.length} players`);
+    });
+
+    // Bots fill empty seats; the host adds and removes them in the lobby
+    const PLAYER_COLORS = ['#FF0000', '#0000FF', '#00FF00', '#FFFF00', '#FF00FF', '#00FFFF'];
+    socket.on('room:addBot', () => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        if (!room || room.hostId !== session.userId || room.state !== 'waiting') return;
+        if (room.players.length >= room.maxPlayers) {
+            socket.emit('room:error', { message: 'Room is full' });
+            return;
+        }
+        const n = room.players.filter((p: any) => p.isBot).length + 1;
+        const used = room.players.map((p: any) => p.color);
+        room.players.push({
+            id: `bot_${Date.now()}_${n}`,
+            username: `Bot ${n}`,
+            socketId: null,
+            color: PLAYER_COLORS.find((c) => !used.includes(c)) || '#FFFFFF',
+            isReady: true,
+            isConnected: true,
+            isHost: false,
+            isBot: true,
+        });
+        io.to(room.code).emit('room:updated', room);
+    });
+
+    socket.on('room:removeBot', ({ botId }) => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        if (!room || room.hostId !== session.userId || room.state !== 'waiting') return;
+        room.players = room.players.filter((p: any) => !(p.isBot && p.id === botId));
+        io.to(room.code).emit('room:updated', room);
     });
 
     // ============================================================================
@@ -438,6 +525,7 @@ io.on('connection', (socket) => {
             let next = run(c, data);
             if (!next || next === gs) return reject('Action not allowed');
 
+            room.autoplay?.delete(me.id); // they are back at the keyboard
             publish(room, next);
         });
     }
@@ -519,6 +607,7 @@ io.on('connection', (socket) => {
             if (player) player.isConnected = false;
             if (room.hostId === session.userId) migrateHost(room);
             io.to(room.code).emit('room:updated', room);
+            scheduleAuto(room); // if it was their turn, the offline timer starts
         }
         // Keep the seat for the grace period, then drop the player
         session.timer = setTimeout(() => dropUser(session), GRACE_MS);

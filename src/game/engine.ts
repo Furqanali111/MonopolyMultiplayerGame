@@ -338,7 +338,7 @@ export function placeBid(state: GameState, playerId: PlayerId, amount: number): 
   // Move to next bidder (wrap around)
   const nextBidderIndex = (state.auction.currentBidderIndex + 1) % activeBidders.length;
 
-  return {
+  const next: GameState = {
     ...state,
     auction: {
       ...state.auction,
@@ -348,6 +348,9 @@ export function placeBid(state: GameState, playerId: PlayerId, amount: number): 
     },
     gameLog: [...state.gameLog, `${player.name} bid $${amount}`],
   };
+
+  // Everyone else already passed: the last bidder wins right away
+  return activeBidders.length === 1 ? finalizeAuction(next) : next;
 }
 
 export function passAuction(state: GameState, playerId: PlayerId): GameState {
@@ -1123,8 +1126,10 @@ export function enterBankruptcyPhase(
     for (const owned of playerProperties) {
       if (currentMoney >= amountOwed) break;
 
-      while (owned.houses > 0 && canSellHouse(newState, playerId, owned.position)) {
+      while (canSellHouse(newState, playerId, owned.position)) {
+        const before = newState;
         newState = sellHouse(newState, playerId, owned.position);
+        if (newState === before) break; // nothing sold: stop instead of spinning
         const updatedPlayer = newState.players.find(p => p.id === playerId)!;
         currentMoney = updatedPlayer.money;
         if (currentMoney >= amountOwed) break;
@@ -1222,7 +1227,7 @@ export function getNextPlayer(state: GameState): number {
   let nextIndex = (state.currentPlayerIndex + 1) % state.players.length;
 
   // Skip bankrupt players
-  while (state.players[nextIndex].isBankrupt) {
+  for (let i = 0; state.players[nextIndex].isBankrupt && i < state.players.length; i++) {
     nextIndex = (nextIndex + 1) % state.players.length;
   }
 
