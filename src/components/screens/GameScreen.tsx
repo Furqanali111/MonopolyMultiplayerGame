@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Home } from 'lucide-react';
+import { Home, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 import { GameState, TradeOffer, AIDifficulty, HouseRules } from '@/game/types';
 import {
@@ -72,6 +72,7 @@ import { ChipFlights } from '@/components/game/ChipFlights';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRODUCT_NAME } from '@/lib/brand';
+import { isMuted, playChange, setMuted } from '@/services/sound';
 
 /** How long a card someone else drew stays up, unless dismissed first */
 const CARD_READ_MS = 15_000;
@@ -124,6 +125,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [deadline, setDeadline] = useState<{ playerId: string; at: number; total: number } | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const seenCard = useRef(gameState.cardSeq ?? 0);
+  const [muted, setMutedState] = useState(isMuted());
+  const lastState = useRef(gameState);
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
 
@@ -170,6 +173,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       setTimeout(() => onGameOver(updatedState), 1000);
     }
   }, [gameState?.players, onGameOver]);
+
+  // Sound follows what changed between two states, whoever caused it
+  useEffect(() => {
+    playChange(lastState.current, gameState, (id) => {
+      const p = gameState.players.find((x) => x.id === id);
+      return !!p && !p.isAI && (!isMultiplayer || p.id === currentUserId);
+    });
+    lastState.current = gameState;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState]);
 
   // Show each drawn card once. Cards other people draw close themselves.
   useEffect(() => {
@@ -373,7 +386,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </Button>
           )}
           <span className="font-display text-lg leading-none text-gold">{PRODUCT_NAME}</span>
-          <div className="ml-auto flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            aria-label={muted ? 'Turn sound on' : 'Turn sound off'}
+            aria-pressed={!muted}
+            onClick={() => {
+              setMuted(!muted);
+              setMutedState(!muted);
+            }}
+          >
+            {muted ? <VolumeX /> : <Volume2 />}
+          </Button>
+          <div className="flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
             <Pawn color={currentPlayer.color} name={currentPlayer.name} size={24} />
             <span className="truncate font-medium">{canAct ? 'Your turn' : `${currentPlayer.name}'s turn`}</span>
           </div>
