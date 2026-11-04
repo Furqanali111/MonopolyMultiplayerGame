@@ -438,6 +438,9 @@ export const onGameStateUpdate = (callback: (data: { gameState: GameState; event
 export const onGameDeadline = (callback: (data: { playerId: string; at: number }) => void): void => {
     socket?.on('game:deadline', callback);
 };
+export const onGameRolling = (callback: (data: { playerId: string }) => void): void => {
+    socket?.on('game:rolling', callback);
+};
 export const onGameAutoplayed = (callback: (data: { playerId: string }) => void): void => {
     socket?.on('game:autoplayed', callback);
 };

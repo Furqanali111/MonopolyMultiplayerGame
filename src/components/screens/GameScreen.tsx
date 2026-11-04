@@ -29,6 +29,7 @@ import { autoStep, whoMustAct } from '@/game/autopilot';
 import {
   onGameStateUpdate,
   onGameDeadline,
+  onGameRolling,
   onGameAutoplayed,
   onChatMessage,
   onChatHistory,
@@ -135,7 +136,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (!isMultiplayer) return;
 
     const onState = ({ gameState: next }: { gameState: GameState }) => {
-      if (next && next.players) setGameState(next);
+      if (next && next.players) {
+        setGameState(next);
+        setIsRolling(false);
+      }
+    };
+    // Someone's roll is about to land (a bot or an auto-played turn): tumble the dice and rattle now
+    const onRolling = () => {
+      setIsRolling(true);
+      rollSound();
     };
     const onDeadline = ({ playerId, at }: { playerId: string; at: number }) =>
       setDeadline({ playerId, at, total: Math.max(1, Math.round((at - Date.now()) / 1000)) });
@@ -148,6 +157,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
     onGameStateUpdate(onState);
     onGameDeadline(onDeadline);
+    onGameRolling(onRolling);
     onGameAutoplayed(onAuto);
     onChatMessage(onMessage);
     onChatHistory(onHistory);
@@ -155,6 +165,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     return () => {
       removeListener('game:stateUpdate', onState);
       removeListener('game:deadline', onDeadline);
+      removeListener('game:rolling', onRolling);
       removeListener('game:autoplayed', onAuto);
       removeListener('chat:message', onMessage);
       removeListener('chat:history', onHistory);
@@ -208,7 +219,24 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
     if (card) return; // wait while a drawn card is on screen
     const delay = gameState.phase === 'auction' ? 700 : gameState.phase === 'trade' ? 2500 : 1900;
-    const timer = setTimeout(() => setGameState(prev => autoStep(prev) ?? prev), delay);
+    const act = () => setGameState(prev => autoStep(prev) ?? prev);
+    if (gameState.phase === 'playing' && gameState.turnPhase === 'roll') {
+      // Tumble the dice (and rattle) first, then move: the sound belongs to the roll, not the walk
+      const start = setTimeout(() => {
+        setIsRolling(true);
+        rollSound();
+      }, delay - 700);
+      const land = setTimeout(() => {
+        act();
+        setIsRolling(false);
+      }, delay);
+      return () => {
+        clearTimeout(start);
+        clearTimeout(land);
+        setIsRolling(false);
+      };
+    }
+    const timer = setTimeout(act, delay);
     return () => clearTimeout(timer);
   }, [gameState, isMultiplayer, card]);
 
