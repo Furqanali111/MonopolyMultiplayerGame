@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { GameState, TradeOffer } from '@/game/types';
+import { GameState, TradeOffer, HouseRules } from '@/game/types';
 import type { GameEvent } from '@/game/events';
 
 // Socket.IO client instance
@@ -141,6 +141,7 @@ export interface Room {
     hostId: string;
     players: RoomPlayer[];
     maxPlayers: number;
+    rules: HouseRules;
     state: 'waiting' | 'playing' | 'finished';
     gameState: GameState | null;
     createdAt: Date;
@@ -211,6 +212,25 @@ export const toggleReady = (isReady: boolean): void => {
 /**
  * Host: fill a seat with a bot / remove one
  */
+export interface ChatMessage { from: string; username: string; text: string; at: number }
+export const sendChat = (text: string): void => {
+    socket?.emit('chat:send', { text });
+};
+export const onChatMessage = (cb: (m: ChatMessage) => void): void => {
+    socket?.on('chat:message', cb);
+};
+export const onChatHistory = (cb: (m: ChatMessage[]) => void): void => {
+    socket?.on('chat:history', cb);
+};
+export const requestRematch = (): void => {
+    socket?.emit('room:rematch', {});
+};
+export const onRematch = (cb: (data: { room: Room }) => void): void => {
+    socket?.on('room:rematch', cb);
+};
+export const setRules = (rules: HouseRules): void => {
+    socket?.emit('room:setRules', { rules });
+};
 export const addBot = (): void => {
     socket?.emit('room:addBot', {});
 };

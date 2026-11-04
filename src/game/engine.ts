@@ -18,7 +18,7 @@ import {
 } from './constants'
 
 export { BOARD_TILES };
-import { GameState, Player, OwnedProperty, AuctionState, TradeOffer, AIDifficulty, PlayerId } from './types';
+import { GameState, Player, OwnedProperty, AuctionState, TradeOffer, AIDifficulty, PlayerId, HouseRules, DEFAULT_RULES } from './types';
 
 // Shuffle array using Fisher-Yates
 function shuffle<T>(array: T[]): T[] {
@@ -30,7 +30,7 @@ function shuffle<T>(array: T[]): T[] {
   return result;
 }
 
-export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty): GameState {
+export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty, rules: HouseRules = DEFAULT_RULES): GameState {
   const players: Player[] = [];
 
   // Human player
@@ -38,7 +38,7 @@ export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty): Gam
     id: '0',
     name: PLAYER_NAMES[0],
     color: PLAYER_COLORS[0],
-    money: 1500,
+    money: rules.startingMoney,
     position: 0,
     isAI: false,
     inJail: false,
@@ -54,7 +54,7 @@ export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty): Gam
       id: String(i + 1),
       name: PLAYER_NAMES[i + 1],
       color: PLAYER_COLORS[i + 1],
-      money: 1500,
+      money: rules.startingMoney,
       position: 0,
       isAI: true,
       difficulty: aiDifficulty,
@@ -85,6 +85,8 @@ export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty): Gam
     gameLog: ['Game started! Roll the dice to begin.'],
     diceMultiplierForRent: 0,
     specialRentMultiplier: null,
+    rules,
+    freeParkingPot: 0,
   };
 }
 
@@ -740,6 +742,16 @@ export function payBank(state: GameState, playerId: PlayerId, amount: number, re
     players: updatedPlayers,
     gameLog: [...state.gameLog, `${player.name} paid $${amount} (${reason})`],
   };
+}
+
+// Taxes: with the pot rule, what was actually paid is kept for Free Parking.
+function payTax(state: GameState, playerId: PlayerId, amount: number, reason: string): GameState {
+  const moneyOf = (s: GameState) => s.players.find(p => p.id === playerId)?.money ?? 0;
+  const next = payBank(state, playerId, amount, reason);
+  const paid = moneyOf(state) - moneyOf(next);
+  return state.rules?.freeParkingPot && paid > 0
+    ? { ...next, freeParkingPot: (next.freeParkingPot ?? 0) + paid }
+    : next;
 }
 
 export function collectFromBank(state: GameState, playerId: PlayerId, amount: number, reason: string): GameState {
@@ -1421,12 +1433,12 @@ export function resolveTile(state: GameState, playerId: PlayerId): GameState {
       break;
 
     case 'tax':
-      newState = payBank(newState, playerId, INCOME_TAX_AMOUNT, 'Income Tax');
+      newState = payTax(newState, playerId, INCOME_TAX_AMOUNT, 'Income Tax');
       newState.turnPhase = 'endturn';
       break;
 
     case 'luxury':
-      newState = payBank(newState, playerId, LUXURY_TAX_AMOUNT, 'Luxury Tax');
+      newState = payTax(newState, playerId, LUXURY_TAX_AMOUNT, 'Luxury Tax');
       newState.turnPhase = 'endturn';
       break;
 
@@ -1453,10 +1465,18 @@ export function resolveTile(state: GameState, playerId: PlayerId): GameState {
       newState.turnPhase = 'endturn';
       break;
 
-    case 'free':
-      // Free parking - nothing happens (official rules)
+    case 'free': {
+      // Official rules: nothing. With the pot rule, collect the accumulated taxes.
+      const pot = state.freeParkingPot ?? 0;
+      if (state.rules?.freeParkingPot && pot > 0) {
+        newState = {
+          ...collectFromBank(newState, playerId, pot, 'Free Parking'),
+          freeParkingPot: 0,
+        };
+      }
       newState.turnPhase = 'endturn';
       break;
+    }
 
     case 'gotojail':
       newState = sendToJail(newState, playerId);
