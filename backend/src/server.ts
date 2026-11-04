@@ -35,6 +35,7 @@ import {
     canMortgage,
     canUnmortgage,
 } from '../../src/game/engine';
+import { DEFAULT_RULES, HouseRules, sanitizeRules } from '../../src/game/types';
 import { diffEvents } from '../../src/game/events';
 import { autoStep, whoMustAct } from '../../src/game/autopilot';
 import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES } from '../../src/game/constants';
@@ -195,7 +196,7 @@ function dropUser(user: any) {
 }
 
 // Game initialization function for multiplayer
-function initializeMultiplayerGame(roomPlayers: any[]) {
+function initializeMultiplayerGame(roomPlayers: any[], rules: HouseRules) {
     // Shuffle cards
     const chanceCards = shuffleArray([...CHANCE_CARDS]);
     const communityChestCards = shuffleArray([...COMMUNITY_CHEST_CARDS]);
@@ -205,7 +206,7 @@ function initializeMultiplayerGame(roomPlayers: any[]) {
         id: roomPlayer.id,
         name: roomPlayer.username,
         color: roomPlayer.color,
-        money: 1500,
+        money: rules.startingMoney,
         position: 0,
         isAI: !!roomPlayer.isBot,
         ...(roomPlayer.isBot ? { difficulty: 'medium' } : {}),
@@ -235,6 +236,8 @@ function initializeMultiplayerGame(roomPlayers: any[]) {
         gameLog: ['Game started! Roll the dice to begin.'],
         diceMultiplierForRent: 0,
         specialRentMultiplier: null,
+        rules,
+        freeParkingPot: 0,
     };
 }
 
@@ -333,6 +336,7 @@ io.on('connection', (socket) => {
                 },
             ],
             maxPlayers: 6,
+            rules: DEFAULT_RULES,
             state: 'waiting',
             gameState: null,
             createdAt: new Date(),
@@ -455,7 +459,7 @@ io.on('connection', (socket) => {
         room.state = 'playing';
 
         // Initialize game state from room players
-        const gameState = initializeMultiplayerGame(room.players);
+        const gameState = initializeMultiplayerGame(room.players, room.rules);
         room.gameState = gameState;
         room.version = 0;
         room.autoplay = new Set();
@@ -464,6 +468,15 @@ io.on('connection', (socket) => {
         scheduleAuto(room);
 
         console.log(`🎮 Game started in room ${session.roomCode} with ${room.players.length} players`);
+    });
+
+    // Host picks the house rules in the lobby
+    socket.on('room:setRules', ({ rules }) => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        if (!room || room.hostId !== session.userId || room.state !== 'waiting') return;
+        room.rules = sanitizeRules(rules);
+        io.to(room.code).emit('room:updated', room);
     });
 
     // Bots fill empty seats; the host adds and removes them in the lobby

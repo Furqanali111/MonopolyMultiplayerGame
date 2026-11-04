@@ -2,6 +2,22 @@ import { Property, CardData } from './constants';
 
 export type PlayerId = string;
 
+export interface HouseRules {
+  startingMoney: number;
+  freeParkingPot: boolean; // taxes go to a pot that Free Parking pays out
+}
+
+export const DEFAULT_RULES: HouseRules = { startingMoney: 1500, freeParkingPot: false };
+
+/** Clamp untrusted rule input from a client. */
+export function sanitizeRules(input: Partial<HouseRules> | undefined): HouseRules {
+  const money = Math.round(Number(input?.startingMoney));
+  return {
+    startingMoney: Number.isFinite(money) ? Math.min(10000, Math.max(500, money)) : DEFAULT_RULES.startingMoney,
+    freeParkingPot: !!input?.freeParkingPot,
+  };
+}
+
 export type AIDifficulty = 'easy' | 'medium';
 
 export interface Player {
@@ -74,6 +90,8 @@ export interface GameState {
   winner: PlayerId | null;
   preAuctionPlayerIndex?: number;
   gameLog: string[];
+  rules?: HouseRules;
+  freeParkingPot?: number; // money waiting on Free Parking (only with the pot rule)
   diceMultiplierForRent: number; // For utility rent calculation
   specialRentMultiplier: { type: 'railroad' | 'utility', multiplier: number } | null; // For card-based movements
 }
