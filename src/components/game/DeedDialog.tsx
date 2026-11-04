@@ -26,7 +26,8 @@ interface DeedDialogProps {
   };
 }
 
-const RENT_LABELS = ['Rent', 'With a full set', 'With 1 house', 'With 2 houses', 'With 3 houses', 'With 4 houses', 'With a hotel'];
+// One label per entry of a property's rent list: base rent, then 1 to 4 houses, then a hotel
+const RENT_LABELS = ['Rent', 'With 1 house', 'With 2 houses', 'With 3 houses', 'With 4 houses', 'With a hotel'];
 
 /** The title deed for any tile, opened by tapping it on the board. */
 export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onClose, onOffer, viewerId, offerBlocked, manage }) => {
@@ -64,10 +65,18 @@ export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onC
                           ? '4× the dice, one utility'
                           : '10× the dice, both';
                   return (
-                    <div key={i} className="flex justify-between py-1.5">
-                      <dt className="text-muted-foreground">{label}</dt>
-                      <dd className="font-medium">${amount}</dd>
-                    </div>
+                    <React.Fragment key={i}>
+                      <div className="flex justify-between py-1.5">
+                        <dt className="text-muted-foreground">{label}</dt>
+                        <dd className="font-medium">${amount}</dd>
+                      </div>
+                      {i === 0 && property.type === 'property' && (
+                        <div className="flex justify-between py-1.5">
+                          <dt className="text-muted-foreground">Full set, no houses</dt>
+                          <dd className="font-medium">${amount * 2}</dd>
+                        </div>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </dl>
