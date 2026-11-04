@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { resumeSession, Room } from '@/services/socket';
 import { AIDifficulty, GameState, Player } from '@/game/types';
 import { HomeScreen } from '@/components/screens/HomeScreen';
 import { SetupScreen } from '@/components/screens/SetupScreen';
@@ -18,7 +19,25 @@ const Index = () => {
     aiCount: 2,
     difficulty: 'medium' as AIDifficulty,
   });
+  const [resumedRoom, setResumedRoom] = useState<Room | null>(null);
   const [finalGameState, setFinalGameState] = useState<GameState | null>(null);
+
+  // After a refresh, go back to the lobby or game we were in
+  useEffect(() => {
+    resumeSession().then((res) => {
+      if (!res?.userId || !res.username) return;
+      setCurrentUser({ id: res.userId, username: res.username });
+      if (!res.room) return;
+      setIsMultiplayer(true);
+      if (res.room.state === 'playing' && res.room.gameState) {
+        setOnlineGameState(res.room.gameState);
+        setScreen('game');
+      } else {
+        setResumedRoom(res.room);
+        setScreen('lobby');
+      }
+    });
+  }, []);
 
   const handleStartSetup = () => {
     setIsMultiplayer(false);
@@ -84,6 +103,7 @@ const Index = () => {
       {screen === 'lobby' && currentUser && (
         <LobbyScreen
           currentUser={currentUser}
+          initialRoom={resumedRoom}
           onBack={() => setScreen('home')}
           onGameStarted={handleOnlineGameStarted}
         />
