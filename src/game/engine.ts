@@ -18,7 +18,7 @@ import {
 } from './constants'
 
 export { BOARD_TILES };
-import { GameState, Player, OwnedProperty, AuctionState, TradeOffer, AIDifficulty } from './types';
+import { GameState, Player, OwnedProperty, AuctionState, TradeOffer, AIDifficulty, PlayerId } from './types';
 
 // Shuffle array using Fisher-Yates
 function shuffle<T>(array: T[]): T[] {
@@ -35,7 +35,7 @@ export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty): Gam
 
   // Human player
   players.push({
-    id: 0,
+    id: '0',
     name: PLAYER_NAMES[0],
     color: PLAYER_COLORS[0],
     money: 1500,
@@ -51,7 +51,7 @@ export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty): Gam
   // AI players
   for (let i = 0; i < aiCount; i++) {
     players.push({
-      id: i + 1,
+      id: String(i + 1),
       name: PLAYER_NAMES[i + 1],
       color: PLAYER_COLORS[i + 1],
       money: 1500,
@@ -99,7 +99,7 @@ export function isDoubles(dice: [number, number]): boolean {
   return dice[0] === dice[1];
 }
 
-export function movePlayer(state: GameState, playerId: number, spaces: number): GameState {
+export function movePlayer(state: GameState, playerId: PlayerId, spaces: number): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -133,7 +133,7 @@ export function movePlayer(state: GameState, playerId: number, spaces: number): 
   return { ...state, players: updatedPlayers, gameLog: newLog };
 }
 
-export function moveToPosition(state: GameState, playerId: number, position: number, collectGo: boolean = true): GameState {
+export function moveToPosition(state: GameState, playerId: PlayerId, position: number, collectGo: boolean = true): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -162,7 +162,7 @@ export function moveToPosition(state: GameState, playerId: number, position: num
   return { ...state, players: updatedPlayers, gameLog: newLog };
 }
 
-export function sendToJail(state: GameState, playerId: number): GameState {
+export function sendToJail(state: GameState, playerId: PlayerId): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -194,7 +194,7 @@ export function getPropertyData(position: number): Property | undefined {
   return tile?.property;
 }
 
-export function hasMonopoly(state: GameState, playerId: number, position: number): boolean {
+export function hasMonopoly(state: GameState, playerId: PlayerId, position: number): boolean {
   const property = getPropertyData(position);
   if (!property || !property.colorGroup) return false;
 
@@ -260,7 +260,7 @@ export function calculateRent(state: GameState, position: number, diceRoll?: [nu
   return property.rent[owned.houses] || 0;
 }
 
-export function canBuyProperty(state: GameState, playerId: number, position: number): boolean {
+export function canBuyProperty(state: GameState, playerId: PlayerId, position: number): boolean {
   const player = state.players.find(p => p.id === playerId);
   const property = getPropertyData(position);
   const owned = getPropertyOwner(state, position);
@@ -269,7 +269,7 @@ export function canBuyProperty(state: GameState, playerId: number, position: num
   return player.money >= property.price;
 }
 
-export function buyProperty(state: GameState, playerId: number, position: number): GameState {
+export function buyProperty(state: GameState, playerId: PlayerId, position: number): GameState {
   const player = state.players.find(p => p.id === playerId);
   const property = getPropertyData(position);
 
@@ -318,7 +318,7 @@ export function startAuction(state: GameState, position: number): GameState {
   };
 }
 
-export function placeBid(state: GameState, playerId: number, amount: number): GameState {
+export function placeBid(state: GameState, playerId: PlayerId, amount: number): GameState {
   if (!state.auction) return state;
 
   // Verify it's this player's turn to bid
@@ -350,7 +350,7 @@ export function placeBid(state: GameState, playerId: number, amount: number): Ga
   };
 }
 
-export function passAuction(state: GameState, playerId: number): GameState {
+export function passAuction(state: GameState, playerId: PlayerId): GameState {
   if (!state.auction) return state;
 
   // Verify it's this player's turn to pass
@@ -476,7 +476,7 @@ export function finalizeAuction(state: GameState): GameState {
   };
 }
 
-export function canBuildHouse(state: GameState, playerId: number, position: number): boolean {
+export function canBuildHouse(state: GameState, playerId: PlayerId, position: number): boolean {
   const owned = getPropertyOwner(state, position);
   const property = getPropertyData(position);
 
@@ -517,7 +517,7 @@ export function canBuildHouse(state: GameState, playerId: number, position: numb
   return owned.houses <= minHouses;
 }
 
-export function buildHouse(state: GameState, playerId: number, position: number): GameState {
+export function buildHouse(state: GameState, playerId: PlayerId, position: number): GameState {
   if (!canBuildHouse(state, playerId, position)) return state;
 
   const owned = getPropertyOwner(state, position)!;
@@ -553,7 +553,7 @@ export function buildHouse(state: GameState, playerId: number, position: number)
   };
 }
 
-export function canSellHouse(state: GameState, playerId: number, position: number): boolean {
+export function canSellHouse(state: GameState, playerId: PlayerId, position: number): boolean {
   const owned = getPropertyOwner(state, position);
   const property = getPropertyData(position);
 
@@ -572,7 +572,7 @@ export function canSellHouse(state: GameState, playerId: number, position: numbe
   return owned.houses >= maxHouses;
 }
 
-export function sellHouse(state: GameState, playerId: number, position: number): GameState {
+export function sellHouse(state: GameState, playerId: PlayerId, position: number): GameState {
   if (!canSellHouse(state, playerId, position)) return state;
 
   const owned = getPropertyOwner(state, position)!;
@@ -608,7 +608,7 @@ export function sellHouse(state: GameState, playerId: number, position: number):
   };
 }
 
-export function canMortgage(state: GameState, playerId: number, position: number): boolean {
+export function canMortgage(state: GameState, playerId: PlayerId, position: number): boolean {
   const owned = getPropertyOwner(state, position);
   const property = getPropertyData(position);
 
@@ -627,7 +627,7 @@ export function canMortgage(state: GameState, playerId: number, position: number
   return true;
 }
 
-export function mortgageProperty(state: GameState, playerId: number, position: number): GameState {
+export function mortgageProperty(state: GameState, playerId: PlayerId, position: number): GameState {
   if (!canMortgage(state, playerId, position)) return state;
 
   const property = getPropertyData(position)!;
@@ -652,7 +652,7 @@ export function mortgageProperty(state: GameState, playerId: number, position: n
   };
 }
 
-export function canUnmortgage(state: GameState, playerId: number, position: number): boolean {
+export function canUnmortgage(state: GameState, playerId: PlayerId, position: number): boolean {
   const owned = getPropertyOwner(state, position);
   const property = getPropertyData(position);
 
@@ -665,7 +665,7 @@ export function canUnmortgage(state: GameState, playerId: number, position: numb
   return player ? player.money >= unmortgageCost : false;
 }
 
-export function unmortgageProperty(state: GameState, playerId: number, position: number): GameState {
+export function unmortgageProperty(state: GameState, playerId: PlayerId, position: number): GameState {
   if (!canUnmortgage(state, playerId, position)) return state;
 
   const property = getPropertyData(position)!;
@@ -691,7 +691,7 @@ export function unmortgageProperty(state: GameState, playerId: number, position:
   };
 }
 
-export function payRent(state: GameState, payerId: number, ownerId: number, amount: number): GameState {
+export function payRent(state: GameState, payerId: PlayerId, ownerId: PlayerId, amount: number): GameState {
   const payerIndex = state.players.findIndex(p => p.id === payerId);
   const ownerIndex = state.players.findIndex(p => p.id === ownerId);
 
@@ -717,7 +717,7 @@ export function payRent(state: GameState, payerId: number, ownerId: number, amou
   };
 }
 
-export function payBank(state: GameState, playerId: number, amount: number, reason: string): GameState {
+export function payBank(state: GameState, playerId: PlayerId, amount: number, reason: string): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -739,7 +739,7 @@ export function payBank(state: GameState, playerId: number, amount: number, reas
   };
 }
 
-export function collectFromBank(state: GameState, playerId: number, amount: number, reason: string): GameState {
+export function collectFromBank(state: GameState, playerId: PlayerId, amount: number, reason: string): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -886,7 +886,7 @@ export function executeCard(state: GameState): GameState {
   return newState;
 }
 
-export function releaseFromJail(state: GameState, playerId: number, method: 'fine' | 'card' | 'doubles'): GameState {
+export function releaseFromJail(state: GameState, playerId: PlayerId, method: 'fine' | 'card' | 'doubles'): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -944,7 +944,7 @@ export function releaseFromJail(state: GameState, playerId: number, method: 'fin
   };
 }
 
-export function incrementJailTurn(state: GameState, playerId: number): GameState {
+export function incrementJailTurn(state: GameState, playerId: PlayerId): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -976,7 +976,7 @@ export function incrementJailTurn(state: GameState, playerId: number): GameState
   return { ...state, players: updatedPlayers };
 }
 
-export function calculatePlayerNetWorth(state: GameState, playerId: number): number {
+export function calculatePlayerNetWorth(state: GameState, playerId: PlayerId): number {
   const player = state.players.find(p => p.id === playerId);
   if (!player) return 0;
 
@@ -1003,7 +1003,7 @@ export function calculatePlayerNetWorth(state: GameState, playerId: number): num
 }
 
 // Calculate how much liquid cash a player could raise by selling all assets
-export function calculateLiquidAssets(state: GameState, playerId: number): number {
+export function calculateLiquidAssets(state: GameState, playerId: PlayerId): number {
   const player = state.players.find(p => p.id === playerId);
   if (!player) return 0;
 
@@ -1029,7 +1029,7 @@ export function calculateLiquidAssets(state: GameState, playerId: number): numbe
   return liquidCash;
 }
 
-export function declareBankruptcy(state: GameState, playerId: number, creditorId: number | null): GameState {
+export function declareBankruptcy(state: GameState, playerId: PlayerId, creditorId: PlayerId | null): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return state;
 
@@ -1091,9 +1091,9 @@ export function declareBankruptcy(state: GameState, playerId: number, creditorId
 // Enter bankruptcy phase - gives player a chance to raise cash before declaring bankruptcy
 export function enterBankruptcyPhase(
   state: GameState,
-  playerId: number,
+  playerId: PlayerId,
   amountOwed: number,
-  creditorId: number | null,
+  creditorId: PlayerId | null,
   reason: string
 ): GameState {
   const player = state.players.find(p => p.id === playerId);
@@ -1163,9 +1163,9 @@ export function enterBankruptcyPhase(
 // Attempt to pay after managing assets in bankruptcy phase
 export function attemptPayment(
   state: GameState,
-  playerId: number,
+  playerId: PlayerId,
   amountOwed: number,
-  creditorId: number | null,
+  creditorId: PlayerId | null,
   reason: string
 ): GameState {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
@@ -1210,7 +1210,7 @@ export function attemptPayment(
   };
 }
 
-export function checkWinCondition(state: GameState): number | null {
+export function checkWinCondition(state: GameState): PlayerId | null {
   const activePlayers = state.players.filter(p => !p.isBankrupt);
   if (activePlayers.length === 1) {
     return activePlayers[0].id;
@@ -1383,7 +1383,7 @@ export function declineTrade(state: GameState): GameState {
   };
 }
 
-export function resolveTile(state: GameState, playerId: number): GameState {
+export function resolveTile(state: GameState, playerId: PlayerId): GameState {
   const player = state.players.find(p => p.id === playerId);
   if (!player) return state;
 
@@ -1509,7 +1509,7 @@ export function rollForJailTurn(state: GameState, dice: [number, number]): GameS
 }
 
 /** Pay the fine / use a card to leave jail; the player then rolls normally. */
-export function leaveJail(state: GameState, playerId: number, method: 'fine' | 'card'): GameState {
+export function leaveJail(state: GameState, playerId: PlayerId, method: 'fine' | 'card'): GameState {
   const player = state.players.find(p => p.id === playerId);
   if (!player || !player.inJail) return state;
   if (method === 'fine' && player.money < JAIL_FINE) return state;

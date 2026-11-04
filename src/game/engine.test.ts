@@ -34,7 +34,7 @@ describe('rollTurn', () => {
   it('doubles onto an unowned property waits for buy, then rolls again', () => {
     let s = rollTurn(at(newGame(), 0), [3, 3]); // Oriental Ave (6)
     expect(s.turnPhase).toBe('action');
-    s = buyProperty(s, 0, 6);
+    s = buyProperty(s, "0", 6);
     expect(s.turnPhase).toBe('roll');
   });
 });
@@ -62,8 +62,8 @@ describe('jail and turn flow', () => {
 
   it('paying the fine needs the money and sets roll', () => {
     const g = jailed();
-    expect(leaveJail({ ...g, players: g.players.map(p => ({ ...p, money: 10 })) }, 0, 'fine').players[0].inJail).toBe(true);
-    const s = leaveJail(g, 0, 'fine');
+    expect(leaveJail({ ...g, players: g.players.map(p => ({ ...p, money: 10 })) }, "0", "fine").players[0].inJail).toBe(true);
+    const s = leaveJail(g, "0", 'fine');
     expect(s.players[0].inJail).toBe(false);
     expect(s.turnPhase).toBe('roll');
   });
@@ -84,6 +84,6 @@ describe('jail and turn flow', () => {
     g.players[1].isBankrupt = g.players[2].isBankrupt = true;
     const s = applyWinCondition(g);
     expect(s.phase).toBe('gameover');
-    expect(s.winner).toBe(0);
+    expect(s.winner).toBe("0");
   });
 });

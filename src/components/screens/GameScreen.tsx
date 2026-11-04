@@ -496,7 +496,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // In multiplayer, check if it's this player's turn
   // Convert both IDs to strings for comparison since multiplayer uses string IDs
-  const isMyTurn = !isMultiplayer || (currentUserId && String(currentPlayer.id) === String(currentUserId));
+  const isMyTurn = !isMultiplayer || (currentUserId && currentPlayer.id === currentUserId);
 
   console.log('🎯 Turn control:', {
     isMultiplayer,

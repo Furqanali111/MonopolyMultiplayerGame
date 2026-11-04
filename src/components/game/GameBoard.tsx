@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GameState, Player } from '@/game/types';
+import { GameState, Player, PlayerId } from '@/game/types';
 import { BOARD_TILES, PropertyColor } from '@/game/constants';
 import { getPropertyOwner } from '@/game/engine';
 import { Home, Car, Zap, HelpCircle, Building2, Landmark, ParkingCircle, AlertTriangle, ArrowRight, Gem } from 'lucide-react';
@@ -90,7 +90,7 @@ const BoardTile: React.FC<TileProps> = ({
   const colorBg = property?.color ? PROPERTY_BG[property.color] : '';
   
   // Track animated positions for each player
-  const [animatedPositions, setAnimatedPositions] = useState<Map<number, number>>(new Map());
+  const [animatedPositions, setAnimatedPositions] = useState<Map<PlayerId, number>>(new Map());
   
   // Track which moves we've already animated (player ID + destination position)
   const animatedMovesRef = useRef<Set<string>>(new Set());
