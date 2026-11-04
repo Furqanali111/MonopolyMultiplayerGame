@@ -463,6 +463,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           setTradeSeed({ partnerId, requestedProperty });
           setShowTrade(true);
         }}
+        manage={{
+          blocked: !canAct ? 'You can build on your own turn.' : gameState.phase !== 'playing' ? 'Finish the auction or trade in progress first.' : undefined,
+          onBuild: handleBuildHouse,
+          onSell: handleSellHouse,
+          onMortgage: handleMortgage,
+          onUnmortgage: handleUnmortgage,
+        }}
         offerBlocked={
           !canAct
             ? 'You can make offers on your own turn.'
