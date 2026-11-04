@@ -102,7 +102,7 @@ function publish(room: any, next: any) {
 // ---------------------------------------------------------------------------
 const TURN_MS = Number(process.env.TURN_TIMEOUT_MS ?? 90_000);        // 0 disables the timer
 const OFFLINE_TURN_MS = Number(process.env.OFFLINE_TURN_MS ?? 10_000);
-const BOT_MS = Number(process.env.BOT_DELAY_MS ?? 900);
+const BOT_MS = Number(process.env.BOT_DELAY_MS ?? 1900);
 
 // Timers live here, not on the room: a room object is sent to clients and a Timeout is circular.
 const autoTimers = new Map<string, NodeJS.Timeout>();

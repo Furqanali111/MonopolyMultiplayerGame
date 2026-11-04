@@ -73,6 +73,9 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRODUCT_NAME } from '@/lib/brand';
 
+/** How long a card someone else drew stays up, unless dismissed first */
+const CARD_READ_MS = 15_000;
+
 interface GameScreenProps {
   aiCount: number;
   difficulty: AIDifficulty;
@@ -175,7 +178,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     const drawn = gameState.lastCard;
     const byMe = !currentPlayer.isAI && (!isMultiplayer || currentPlayer.id === currentUserId);
     const open = setTimeout(() => setCard(drawn), 600);
-    const close = byMe ? undefined : setTimeout(() => setCard((c) => (c === drawn ? null : c)), 2400);
+    const close = byMe ? undefined : setTimeout(() => setCard((c) => (c === drawn ? null : c)), CARD_READ_MS);
     return () => {
       clearTimeout(open);
       if (close) clearTimeout(close);
@@ -189,10 +192,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     const actor = whoMustAct(gameState);
     if (!actor?.isAI) return;
 
-    const delay = gameState.phase === 'auction' ? 300 : gameState.phase === 'trade' ? 1500 : 800;
+    if (card) return; // wait while a drawn card is on screen
+    const delay = gameState.phase === 'auction' ? 700 : gameState.phase === 'trade' ? 2500 : 1900;
     const timer = setTimeout(() => setGameState(prev => autoStep(prev) ?? prev), delay);
     return () => clearTimeout(timer);
-  }, [gameState, isMultiplayer]);
+  }, [gameState, isMultiplayer, card]);
 
   // Single player runs the shared engine locally; online the server runs it.
   const rollWithDelay = (turn: (state: GameState, dice: [number, number]) => GameState) => {
@@ -444,7 +448,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </aside>
       </main>
 
-      <ChipFlights players={gameState.players} />
+      <ChipFlights players={gameState.players} pot={gameState.freeParkingPot ?? 0} />
       <DeedDialog position={inspect} gameState={gameState} onClose={() => setInspect(null)} />
       {card && <CardDisplay card={card} onDismiss={() => setCard(null)} />}
 

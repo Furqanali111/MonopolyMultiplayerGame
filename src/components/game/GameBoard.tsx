@@ -138,6 +138,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
   return (
     <button
       type="button"
+      data-tile={position}
       onClick={onClick}
       aria-label={`${tile.name}${property ? `, $${property.price}` : ''}${owner ? `, owned by ${owner.name}` : ''}`}
       className={cn(

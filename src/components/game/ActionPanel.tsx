@@ -103,7 +103,7 @@ export const ActionPanel: React.FC<ActionPanelProps> = ({
     );
   } else if (phase === 'roll') {
     heading = 'Your turn';
-    detail = 'Roll the dice to move.';
+    detail = player.doublesCount > 0 ? 'You rolled doubles, so roll again.' : 'Roll the dice to move.';
     primary = (
       <Primary onClick={onRoll} disabled={isRolling}>
         <Dices /> {isRolling ? 'Rolling…' : 'Roll dice'}
