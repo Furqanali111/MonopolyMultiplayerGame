@@ -11,6 +11,7 @@ import {
   placeBid,
   passAuction,
   buildHouse,
+  unmortgageProperty,
   canBuildHouse,
   acceptTrade,
   declineTrade,
@@ -24,6 +25,7 @@ import {
   getAIAuctionBid,
   getAIJailDecision,
   getAIBuildDecisions,
+  getAIUnmortgage,
   shouldAIAcceptTrade,
   getAITradeOffer,
 } from './ai';
@@ -114,6 +116,8 @@ function decide(s: GameState, p: Player): GameState {
         const proposed = offer && proposeTrade(s, offer);
         if (proposed && proposed.phase === 'trade') return proposed;
       }
+      const lift = getAIUnmortgage(s, p);
+      if (lift !== null) return unmortgageProperty(s, p.id, lift);
       const pos = getAIBuildDecisions(s, p).find(x => canBuildHouse(s, p.id, x));
       return pos !== undefined ? buildHouse(s, p.id, pos) : endTurn(s);
     }

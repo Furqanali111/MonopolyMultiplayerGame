@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { initializeGame } from './engine';
-import { shouldAIAcceptTrade } from './ai';
+import { shouldAIAcceptTrade, getAIUnmortgage } from './ai';
 
 // The human offers cash for the AI's Mediterranean Avenue (price $60)
 const offerCash = (cash: number, difficulty: 'easy' | 'medium') => {
@@ -20,5 +20,19 @@ describe('AI trade answers', () => {
       expect(offerCash(100, d)).toBe(true);
       expect(offerCash(10, d)).toBe(false);
     }
+  });
+});
+
+describe('AI mortgages', () => {
+  it('lifts a mortgage when cash is comfortable, not when it is tight', () => {
+    const base = initializeGame(1, 'medium');
+    const bot = base.players[1];
+    const mk = (money: number) => ({
+      ...base,
+      players: base.players.map(p => (p.id === bot.id ? { ...p, money } : p)),
+      ownedProperties: [{ position: 1, ownerId: bot.id, houses: 0, isMortgaged: true }],
+    });
+    expect(getAIUnmortgage(mk(900), mk(900).players[1])).toBe(1);
+    expect(getAIUnmortgage(mk(320), mk(320).players[1])).toBeNull();
   });
 });
