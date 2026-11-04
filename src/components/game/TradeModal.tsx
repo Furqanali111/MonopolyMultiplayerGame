@@ -14,6 +14,8 @@ interface TradeModalProps {
   gameState: GameState;
   currentPlayer: Player;
   onPropose: (offer: Omit<TradeOffer, 'active'>) => void;
+  /** Opened from a deed: start with this player and deed already chosen */
+  initial?: { partnerId: PlayerId; requestedProperty: number } | null;
 }
 
 const DeedToggle: React.FC<{ position: number; selected: boolean; onToggle: () => void }> = ({ position, selected, onToggle }) => {
@@ -52,7 +54,7 @@ const NumberField: React.FC<{ label: string; value: number; max: number; onChang
   </label>
 );
 
-export const TradeModal: React.FC<TradeModalProps> = ({ open, onOpenChange, gameState, currentPlayer, onPropose }) => {
+export const TradeModal: React.FC<TradeModalProps> = ({ open, onOpenChange, gameState, currentPlayer, onPropose, initial }) => {
   const { players, ownedProperties } = gameState;
 
   const [partnerId, setPartnerId] = useState<PlayerId | null>(null);
@@ -74,7 +76,11 @@ export const TradeModal: React.FC<TradeModalProps> = ({ open, onOpenChange, game
   };
 
   useEffect(() => {
-    if (!open) reset();
+    if (!open) return reset();
+    if (initial) {
+      setPartnerId(initial.partnerId);
+      setRequestedProperties([initial.requestedProperty]);
+    }
   }, [open]);
 
   const others = players.filter((p) => !p.isBankrupt && p.id !== currentPlayer.id);

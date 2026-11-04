@@ -1,4 +1,5 @@
 import React from 'react';
+import { ArrowRightLeft } from 'lucide-react';
 import { GameState } from '@/game/types';
 import { BOARD_TILES } from '@/game/constants';
 import { getPropertyData, getPropertyOwner } from '@/game/engine';
@@ -10,12 +11,15 @@ interface DeedDialogProps {
   position: number | null;
   gameState: GameState;
   onClose: () => void;
+  /** Set when the viewer can make an offer right now (their turn) */
+  onOffer?: (ownerId: string, position: number) => void;
+  viewerId?: string;
 }
 
 const RENT_LABELS = ['Rent', 'With a full set', 'With 1 house', 'With 2 houses', 'With 3 houses', 'With 4 houses', 'With a hotel'];
 
 /** The title deed for any tile, opened by tapping it on the board. */
-export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onClose }) => {
+export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onClose, onOffer, viewerId }) => {
   if (position === null) return null;
   const tile = BOARD_TILES[position];
   const property = getPropertyData(position);
@@ -99,6 +103,11 @@ export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onC
                 (gameState.rules?.freeParkingPot ? `Collect the pot, currently $${(gameState.freeParkingPot ?? 0).toLocaleString()}.` : 'Nothing happens here.')}
               {(tile.type === 'chance' || tile.type === 'community') && 'Draw a card and follow it.'}
             </p>
+          )}
+          {onOffer && owned && owner && owner.id !== viewerId && !owned.isMortgaged && owned.houses === 0 && (
+            <Button className="w-full" onClick={() => onOffer(owner.id, owned.position)}>
+              <ArrowRightLeft /> Make an offer to {owner.name}
+            </Button>
           )}
           <Button variant="secondary" className="w-full" onClick={onClose}>
             Close
