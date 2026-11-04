@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { GameState, TradeOffer } from '@/game/types';
+import type { GameEvent } from '@/game/events';
 
 // Socket.IO client instance
 let socket: Socket | null = null;
@@ -407,7 +408,7 @@ export const onGameStarted = (callback: (data: { gameState: GameState }) => void
 /**
  * Listen for game state updates
  */
-export const onGameStateUpdate = (callback: (data: { gameState: GameState }) => void): void => {
+export const onGameStateUpdate = (callback: (data: { gameState: GameState; events?: GameEvent[]; seq?: number }) => void): void => {
     socket?.on('game:stateUpdate', callback);
 };
 
