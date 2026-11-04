@@ -153,6 +153,7 @@ export interface RoomPlayer {
     isReady: boolean;
     isConnected: boolean;
     isHost: boolean;
+    isBot?: boolean;
 }
 
 export interface CreateRoomResponse {
@@ -204,6 +205,16 @@ export const leaveRoom = (): Promise<{ success: boolean }> => {
  */
 export const toggleReady = (isReady: boolean): void => {
     socket?.emit('room:ready', { isReady });
+};
+
+/**
+ * Host: fill a seat with a bot / remove one
+ */
+export const addBot = (): void => {
+    socket?.emit('room:addBot', {});
+};
+export const removeBot = (botId: string): void => {
+    socket?.emit('room:removeBot', { botId });
 };
 
 /**
@@ -398,6 +409,16 @@ export const onGameStarted = (callback: (data: { gameState: GameState }) => void
  */
 export const onGameStateUpdate = (callback: (data: { gameState: GameState }) => void): void => {
     socket?.on('game:stateUpdate', callback);
+};
+
+/**
+ * Listen for the acting player's deadline / a stand-in move for an absent player
+ */
+export const onGameDeadline = (callback: (data: { playerId: string; at: number }) => void): void => {
+    socket?.on('game:deadline', callback);
+};
+export const onGameAutoplayed = (callback: (data: { playerId: string }) => void): void => {
+    socket?.on('game:autoplayed', callback);
 };
 
 /**

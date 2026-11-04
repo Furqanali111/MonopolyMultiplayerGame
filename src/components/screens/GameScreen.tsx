@@ -34,6 +34,7 @@ import {
   getAIBuildDecisions,
   shouldAIAcceptTrade,
 } from '@/game/ai';
+import { autoStep, whoMustAct } from '@/game/autopilot';
 import {
   onGameStateUpdate,
   rollDice as rollDiceSocket,
@@ -44,7 +45,7 @@ import {
   passAuction as passAuctionSocket,
   rollForJail as rollForJailSocket,
   payJailFine as payJailFineSocket,
-  useJailCard as useJailCardSocket,
+  useJailCard as jailCardSocket,
   proposeTrade as proposeTradeSocket,
   acceptTrade as acceptTradeSocket,
   declineTrade as declineTradeSocket,
@@ -169,103 +170,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   }, [gameState.currentCard]);
 
-  // Handle AI trade responses
+  // Single player: AI seats act through the shared autopilot (online, the server does this)
   useEffect(() => {
-    if (gameState.phase !== 'trade' || !gameState.trade) return;
+    if (isMultiplayer) return;
+    const actor = whoMustAct(gameState);
+    if (!actor?.isAI) return;
 
-    const toPlayer = gameState.players.find(p => p.id === gameState.trade!.toPlayer);
-    if (!toPlayer?.isAI) return;
-
-    // Clear any existing timer
-    if (tradeResponseTimer) {
-      clearTimeout(tradeResponseTimer);
-    }
-
-    // AI responds after a delay
-    const timer = setTimeout(() => {
-      if (shouldAIAcceptTrade(gameState, toPlayer)) {
-        handleAcceptTrade();
-      } else {
-        handleDeclineTrade();
-      }
-    }, 1500);
-
-    setTradeResponseTimer(timer);
-
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [gameState.trade, gameState.phase]);
-
-  // Handle AI turns (ONLY during normal gameplay - never during auction/trade/gameover)
-  useEffect(() => {
-    if (gameState.phase !== 'playing') return;
-    if (!currentPlayer.isAI || currentPlayer.isBankrupt) return;
-
-    const aiDelay = 800;
-
-    const timer = setTimeout(() => {
-      processAIAction();
-    }, aiDelay);
-
+    const delay = gameState.phase === 'auction' ? 300 : gameState.phase === 'trade' ? 1500 : 800;
+    const timer = setTimeout(() => setGameState(prev => autoStep(prev) ?? prev), delay);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    gameState, // Include full gameState to catch all changes including turnPhase
-    currentPlayer.isAI,
-    currentPlayer.isBankrupt,
-    // Note: processAIAction is intentionally not in deps to avoid circular dependency
-  ]);
-
-  const processAIAction = useCallback(() => {
-    const player = gameState.players[gameState.currentPlayerIndex];
-    if (!player.isAI) return;
-
-
-    switch (gameState.turnPhase) {
-      case 'injail':
-        // Handle jail - only when it's specifically the jail phase
-        const jailDecision = getAIJailDecision(gameState, player);
-        if (jailDecision === 'card') {
-          handleUseJailCard();
-        } else if (jailDecision === 'pay' && player.money >= JAIL_FINE) {
-          handlePayJailFine();
-        } else {
-          handleRollForJail();
-        }
-        break;
-
-      case 'roll':
-        handleRollDice();
-        break;
-
-      case 'action':
-        const property = getPropertyData(player.position);
-        const owned = getPropertyOwner(gameState, player.position);
-
-        if (property && !owned) {
-          if (shouldAIBuyProperty(gameState, player)) {
-            handleBuyProperty();
-          } else {
-            handleDeclineProperty();
-          }
-        } else {
-          handleEndTurn();
-        }
-        break;
-
-      case 'endturn':
-        const buildPositions = getAIBuildDecisions(gameState, player);
-        if (buildPositions.length > 0) {
-          handleBuildHouse(buildPositions[0]);
-        } else {
-          handleEndTurn();
-        }
-        break;
-    }
-  }, [
-    gameState,
-  ]);
+  }, [gameState, isMultiplayer]);
 
   // Single player runs the shared engine locally; online the server runs it.
   const rollWithDelay = (turn: (state: GameState, dice: [number, number]) => GameState) => {
@@ -293,7 +207,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [isMultiplayer]);
 
   const handleUseJailCard = useCallback(() => {
-    if (isMultiplayer) return useJailCardSocket();
+    if (isMultiplayer) return jailCardSocket();
     setGameState(prev => leaveJail(prev, prev.players[prev.currentPlayerIndex].id, 'card'));
   }, [isMultiplayer]);
 
@@ -335,18 +249,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
     if (currentBidderId === null) return;
 
-    let newState = placeBid(gameState, currentBidderId, amount);
-
-    // Check if auction should finalize (only one bidder left)
-    const remainingBidders = newState.auction?.participants.filter(
-      id => !newState.auction?.passedPlayers.includes(id)
-    ) || [];
-
-    if (remainingBidders.length === 1) {
-      newState = finalizeAuction(newState);
-    }
-
-    setGameState(newState);
+    setGameState(placeBid(gameState, currentBidderId, amount));
   }, [gameState, isMultiplayer]);
 
   const handlePass = useCallback(() => {
@@ -372,68 +275,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     // passAuction now handles all finalization logic internally
     setGameState(newState);
   }, [gameState, isMultiplayer]);
-  // ...existing code...
-
-  // Handle auction AI turns - must be after handleBid and handlePass are defined
-  useEffect(() => {
-    if (gameState.phase !== 'auction' || !gameState.auction) return;
-
-    const activeBidders = gameState.auction.participants.filter(
-      id => !gameState.auction!.passedPlayers.includes(id)
-    );
-    if (activeBidders.length === 0) return;
-
-    // Use currentBidderIndex to determine whose turn it is
-    const bidderId = activeBidders[gameState.auction.currentBidderIndex % activeBidders.length];
-    const bidder = gameState.players.find(p => p.id === bidderId);
-    if (!bidder?.isAI) return;
-
-    const isFirstBidder =
-      gameState.auction.currentBid === 0 && gameState.auction.currentBidder === null;
-    const delay = isFirstBidder ? 100 : 150;
-
-    const timer = setTimeout(() => {
-      setGameState(currentState => {
-        if (currentState.phase !== 'auction' || !currentState.auction) return currentState;
-
-        const currentActiveBidders = currentState.auction.participants.filter(
-          id => !currentState.auction!.passedPlayers.includes(id)
-        );
-        if (currentActiveBidders.length === 0) return currentState;
-
-        const currentBidderId = currentActiveBidders[currentState.auction.currentBidderIndex % currentActiveBidders.length];
-        const currentBidder = currentState.players.find(p => p.id === currentBidderId);
-        if (!currentBidder?.isAI) return currentState;
-
-        const bid = getAIAuctionBid(currentState, currentBidder);
-
-        if (bid !== null) {
-          let newState = placeBid(currentState, currentBidderId, bid);
-
-          // Check if auction should finalize (only one bidder left)
-          const remainingBidders = newState.auction?.participants.filter(
-            id => !newState.auction?.passedPlayers.includes(id)
-          ) || [];
-
-          if (remainingBidders.length === 1) {
-            newState = finalizeAuction(newState);
-          }
-
-          return newState;
-        }
-
-        // Pass (do not finalize here; engine should handle it consistently)
-        return passAuction(currentState, currentBidderId);
-      });
-    }, delay);
-
-    return () => clearTimeout(timer);
-  }, [
-    gameState.phase,
-    gameState.auction,
-    gameState.players,
-  ]);
-
   // ...existing code...
 
   const handleBuildHouse = useCallback((position: number) => {

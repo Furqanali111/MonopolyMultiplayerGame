@@ -14,6 +14,7 @@ import {
   BOARD_TILES,
 } from './engine';
 import { JAIL_FINE } from './constants';
+import { TradeOffer } from './types';
 
 interface AIDecision {
   action: string;
@@ -415,4 +416,39 @@ export function processAITurn(state: GameState, player: Player): AIDecision {
     default:
       return { action: 'end_turn' };
   }
+}
+
+// Offer cash to the single player who owns the tiles missing from a colour set we mostly hold.
+// Without AI-started trades, bot-only games stall with every set split between players.
+export function getAITradeOffer(state: GameState, player: Player): Omit<TradeOffer, 'active'> | null {
+  const mine = new Set(getPlayerProperties(state, player.id).map(p => p.position));
+  let best: { missing: number[]; ownerId: string; price: number } | null = null;
+
+  for (const tile of BOARD_TILES) {
+    const group = tile.property?.colorGroup;
+    if (!group || !mine.has(tile.position) || group.length < 2) continue;
+
+    const missing = group.filter(pos => !mine.has(pos));
+    if (missing.length === 0 || missing.length * 2 > group.length) continue; // need to hold at least half
+
+    const owned = missing.map(pos => getPropertyOwner(state, pos));
+    const ownerId = owned[0]?.ownerId;
+    const tradable = owned.every(o => o && o.ownerId === ownerId && !o.isMortgaged && o.houses === 0);
+    if (!tradable || ownerId === player.id) continue;
+
+    const price = Math.round(missing.reduce((sum, pos) => sum + (getPropertyData(pos)?.price ?? 0), 0) * 1.6);
+    if (price > player.money - 100) continue;
+    if (!best || missing.length < best.missing.length) best = { missing, ownerId: ownerId!, price };
+  }
+
+  return best && {
+    fromPlayer: player.id,
+    toPlayer: best.ownerId,
+    offeredProperties: [],
+    offeredMoney: best.price,
+    offeredCards: 0,
+    requestedProperties: best.missing,
+    requestedMoney: 0,
+    requestedCards: 0,
+  };
 }
