@@ -80,7 +80,7 @@ function publish(room: any, next: any) {
     io.to(room.code).emit('game:stateUpdate', { gameState: next });
     if (next.phase === 'gameover' && prev.phase !== 'gameover') {
         room.state = 'finished';
-        clearTimeout(room.autoTimer);
+        stopAuto(room);
         io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next });
         return;
     }
@@ -95,8 +95,15 @@ const TURN_MS = Number(process.env.TURN_TIMEOUT_MS ?? 90_000);        // 0 disab
 const OFFLINE_TURN_MS = Number(process.env.OFFLINE_TURN_MS ?? 10_000);
 const BOT_MS = Number(process.env.BOT_DELAY_MS ?? 900);
 
+// Timers live here, not on the room: a room object is sent to clients and a Timeout is circular.
+const autoTimers = new Map<string, NodeJS.Timeout>();
+function stopAuto(room: any) {
+    clearTimeout(autoTimers.get(room.code));
+    autoTimers.delete(room.code);
+}
+
 function scheduleAuto(room: any) {
-    clearTimeout(room.autoTimer);
+    stopAuto(room);
     if (room.state !== 'playing' || !room.gameState) return;
 
     const actor = whoMustAct(room.gameState);
@@ -113,7 +120,7 @@ function scheduleAuto(room: any) {
     }
 
     const version = room.version;
-    room.autoTimer = setTimeout(() => {
+    autoTimers.set(room.code, setTimeout(() => {
         if (room.version !== version || room.state !== 'playing') return; // something happened meanwhile
         const next = autoStep(room.gameState);
         if (!next) return;
@@ -122,12 +129,12 @@ function scheduleAuto(room: any) {
             io.to(room.code).emit('game:autoplayed', { playerId: actor.id });
         }
         publish(room, next);
-    }, delay);
+    }, delay));
 }
 
 const humans = (room: any) => room.players.filter((p: any) => !p.isBot);
 function closeRoom(room: any) {
-    clearTimeout(room.autoTimer);
+    stopAuto(room);
     rooms.delete(room.code);
     console.log(`🗑️ Room deleted: ${room.code}`);
 }
