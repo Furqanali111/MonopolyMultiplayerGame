@@ -3,6 +3,16 @@ import { GameState, TradeOffer } from '@/game/types';
 
 // Socket.IO client instance
 let socket: Socket | null = null;
+let hasConnectedBefore = false;
+
+// Identity token: lets a refresh or dropped connection get the same seat back.
+const TOKEN_KEY = 'monopoly:token';
+const getToken = (): string | null => {
+    try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+};
+const saveToken = (token?: string) => {
+    try { token ? localStorage.setItem(TOKEN_KEY, token) : localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked */ }
+};
 
 // Backend URL - in production, connect to same origin (same port)
 // In development, connect to backend dev server
@@ -26,6 +36,9 @@ export const initializeSocket = (): Socket => {
     // Connection event listeners
     socket.on('connect', () => {
         console.log('✅ Connected to server:', socket?.id);
+        // Socket.IO reconnected with a new socket id: reclaim our seat
+        if (hasConnectedBefore) resume();
+        hasConnectedBefore = true;
     });
 
     socket.on('disconnect', (reason) => {
@@ -71,6 +84,8 @@ export interface LoginResponse {
     success: boolean;
     userId?: string;
     username?: string;
+    token?: string;
+    room?: Room | null;
     error?: string;
 }
 
@@ -80,9 +95,40 @@ export interface LoginResponse {
 export const login = (username: string): Promise<LoginResponse> => {
     return new Promise((resolve) => {
         socket?.emit('auth:login', { username }, (response: LoginResponse) => {
+            if (response.success) saveToken(response.token);
             resolve(response);
         });
     });
+};
+
+/**
+ * Reclaim the previous identity (and room, if any) using the stored token.
+ */
+export const resume = (): Promise<LoginResponse | null> => {
+    const token = getToken();
+    if (!token || !socket) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        socket!.emit('auth:login', { token }, (response: LoginResponse) => {
+            if (!response.success) saveToken(undefined); // token expired on the server
+            resolve(response.success ? response : null);
+        });
+    });
+};
+
+/**
+ * On page load: connect and resume the saved session, if there is one.
+ */
+export const resumeSession = async (): Promise<LoginResponse | null> => {
+    if (!getToken()) return null;
+    const s = socket ?? initializeSocket();
+    if (!s.connected) {
+        await new Promise<void>((done) => {
+            s.once('connect', () => done());
+            s.once('connect_error', () => done());
+            s.connect();
+        });
+    }
+    return s.connected ? resume() : null;
 };
 
 // ============================================================================

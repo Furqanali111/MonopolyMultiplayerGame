@@ -24,6 +24,7 @@ import {
     onPlayerLeft,
     onRoomError,
     onGameStarted,
+    onHostMigrated,
     Room,
     RoomPlayer,
     removeListener
@@ -34,18 +35,20 @@ interface LobbyScreenProps {
     currentUser: { id: string; username: string };
     onBack: () => void;
     onGameStarted: (gameState: any) => void;
+    initialRoom?: Room | null;
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     currentUser,
     onBack,
-    onGameStarted: handleGameStartedProp
+    onGameStarted: handleGameStartedProp,
+    initialRoom = null
 }) => {
-    const [room, setRoom] = useState<Room | null>(null);
+    const [room, setRoom] = useState<Room | null>(initialRoom);
     const [roomCodeInput, setRoomCodeInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
-    const [view, setView] = useState<'selection' | 'waiting'>('selection');
+    const [view, setView] = useState<'selection' | 'waiting'>(initialRoom ? 'waiting' : 'selection');
 
     useEffect(() => {
         console.log('🔧 LobbyScreen: Setting up event listeners');
@@ -79,6 +82,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             console.log('🎮 Calling handleGameStartedProp with:', gameState);
             handleGameStartedProp(gameState);
         });
+
+        onHostMigrated(({ newHostName }) => toast.info(`${newHostName} is now the host`));
 
         console.log('✅ LobbyScreen: All event listeners registered');
 

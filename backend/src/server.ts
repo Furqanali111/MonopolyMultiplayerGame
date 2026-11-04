@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import { randomUUID } from 'crypto';
 
 // Load environment variables
 dotenv.config();
@@ -64,6 +65,77 @@ app.get('/api/health', (req, res) => {
 // In-memory storage (will be replaced with proper managers)
 const sessions = new Map<string, any>();
 const rooms = new Map<string, any>();
+// token -> user record. Survives socket reconnects so a refresh keeps the same seat.
+const users = new Map<string, any>();
+// How long a dropped player keeps their seat before being removed / forfeiting
+const GRACE_MS = Number(process.env.RECONNECT_GRACE_MS) || 60_000;
+
+// Store a new game state, broadcast it, and announce the end of the game once.
+function publish(room: any, next: any) {
+    const prev = room.gameState;
+    next = applyWinCondition(next);
+    room.gameState = next;
+    io.to(room.code).emit('game:stateUpdate', { gameState: next });
+    if (next.phase === 'gameover' && prev.phase !== 'gameover') {
+        room.state = 'finished';
+        io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next });
+    }
+}
+
+// shortcut: host is handed to the first connected player automatically (no accept/timeout offer)
+function migrateHost(room: any) {
+    const next = room.players.find((p: any) => p.isConnected && p.id !== room.hostId);
+    if (!next) return;
+    room.players.forEach((p: any) => (p.isHost = p.id === next.id));
+    room.hostId = next.id;
+    io.to(room.code).emit('host:migrated', { newHostId: next.id, newHostName: next.username });
+}
+
+// A player who never returns loses: assets go to the bank and the game moves on.
+// shortcut: any open auction/trade is cancelled rather than resolved around the leaver.
+function forfeit(room: any, userId: string) {
+    let gs = room.gameState;
+    const p = gs?.players.find((x: any) => x.id === userId);
+    if (!p || p.isBankrupt || gs.phase === 'gameover') return;
+
+    const wasCurrent = gs.players[gs.currentPlayerIndex].id === userId;
+    gs = declareBankruptcy(gs, userId, null);
+    gs = { ...gs, phase: 'playing', auction: null, trade: null, bankruptcyState: null };
+    if (gs.preAuctionPlayerIndex !== undefined) {
+        gs.currentPlayerIndex = gs.preAuctionPlayerIndex;
+        gs.preAuctionPlayerIndex = undefined;
+    }
+    if (wasCurrent || gs.players[gs.currentPlayerIndex].isBankrupt) {
+        if (applyWinCondition(gs).phase !== 'gameover') gs = endTurn(gs);
+    }
+    publish(room, gs);
+}
+
+// Take a player out of their room (voluntary leave, or grace period expired).
+function removePlayer(room: any, userId: string) {
+    if (room.state === 'playing') forfeit(room, userId);
+    room.players = room.players.filter((p: any) => p.id !== userId);
+
+    if (room.players.length === 0) {
+        rooms.delete(room.code);
+        console.log(`🗑️ Room deleted: ${room.code}`);
+        return;
+    }
+    if (room.hostId === userId) {
+        const next = room.players.find((p: any) => p.isConnected) || room.players[0];
+        room.players.forEach((p: any) => (p.isHost = p.id === next.id));
+        room.hostId = next.id;
+        io.to(room.code).emit('host:migrated', { newHostId: next.id, newHostName: next.username });
+    }
+    io.to(room.code).emit('room:playerLeft', { playerId: userId, room });
+}
+
+function dropUser(user: any) {
+    users.delete(user.token);
+    const room = user.roomCode && rooms.get(user.roomCode);
+    user.roomCode = null;
+    if (room) removePlayer(room, user.userId);
+}
 
 // Game initialization function for multiplayer
 function initializeMultiplayerGame(roomPlayers: any[]) {
@@ -126,34 +198,50 @@ io.on('connection', (socket) => {
     // AUTHENTICATION
     // ============================================================================
 
-    socket.on('auth:login', ({ username }, callback) => {
-        console.log(`🔐 Login attempt: ${username}`);
+    socket.on('auth:login', ({ username, token }, callback) => {
+        // Returning user (page refresh / dropped connection): reattach to the same seat
+        const existing = token && users.get(token);
+        if (existing) {
+            clearTimeout(existing.timer);
+            sessions.delete(existing.socketId);
+            existing.socketId = socket.id;
+            sessions.set(socket.id, existing);
 
-        // Validate username
-        if (!username || username.length < 3 || username.length > 15) {
-            callback({
-                success: false,
-                error: 'Username must be 3-15 characters',
-            });
+            const room = existing.roomCode && rooms.get(existing.roomCode);
+            if (room) {
+                const player = room.players.find((p: any) => p.id === existing.userId);
+                if (player) {
+                    player.isConnected = true;
+                    player.socketId = socket.id;
+                }
+                socket.join(room.code);
+                io.to(room.code).emit('room:updated', room);
+            } else {
+                existing.roomCode = null;
+            }
+            callback({ success: true, userId: existing.userId, username: existing.username, token, room: room || null });
+            console.log(`🔁 ${existing.username} reconnected`);
             return;
         }
 
-        // Create session
-        const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        sessions.set(socket.id, {
-            userId,
+        if (!username || username.length < 3 || username.length > 15) {
+            callback({ success: false, error: 'Username must be 3-15 characters' });
+            return;
+        }
+
+        const user = {
+            userId: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             username,
+            token: randomUUID(),
             socketId: socket.id,
-            roomCode: null,
-        });
+            roomCode: null as string | null,
+            timer: undefined as NodeJS.Timeout | undefined,
+        };
+        users.set(user.token, user);
+        sessions.set(socket.id, user);
 
-        callback({
-            success: true,
-            userId,
-            username,
-        });
-
-        console.log(`✅ User logged in: ${username} (${userId})`);
+        callback({ success: true, userId: user.userId, username, token: user.token, room: null });
+        console.log(`✅ User logged in: ${username} (${user.userId})`);
     });
 
     // ============================================================================
@@ -260,37 +348,11 @@ io.on('connection', (socket) => {
             callback({ success: false });
             return;
         }
-
         const room = rooms.get(session.roomCode);
-        if (room) {
-            // Remove player from room
-            room.players = room.players.filter((p: any) => p.id !== session.userId);
-
-            // If room is empty, delete it
-            if (room.players.length === 0) {
-                rooms.delete(session.roomCode);
-                console.log(`🗑️ Room deleted: ${session.roomCode}`);
-            } else {
-                // If host left, assign new host
-                if (room.hostId === session.userId && room.players.length > 0) {
-                    room.hostId = room.players[0].id;
-                    room.players[0].isHost = true;
-                    console.log(`👑 New host: ${room.players[0].username}`);
-                }
-
-                // Notify remaining players
-                io.to(session.roomCode).emit('room:playerLeft', {
-                    playerId: session.userId,
-                    room,
-                });
-            }
-        }
-
         socket.leave(session.roomCode);
         session.roomCode = null;
-
+        if (room) removePlayer(room, session.userId);
         callback({ success: true });
-
         console.log(`👋 ${session.username} left room`);
     });
 
@@ -376,13 +438,7 @@ io.on('connection', (socket) => {
             let next = run(c, data);
             if (!next || next === gs) return reject('Action not allowed');
 
-            next = applyWinCondition(next);
-            room.gameState = next;
-            io.to(room.code).emit('game:stateUpdate', { gameState: next });
-            if (next.phase === 'gameover' && gs.phase !== 'gameover') {
-                room.state = 'finished';
-                io.to(room.code).emit('game:ended', { winner: next.winner, finalState: next });
-            }
+            publish(room, next);
         });
     }
 
@@ -453,22 +509,19 @@ io.on('connection', (socket) => {
         console.log(`❌ Client disconnected: ${socket.id}`);
 
         const session = sessions.get(socket.id);
-        if (session && session.roomCode) {
-            const room = rooms.get(session.roomCode);
-            if (room) {
-                const player = room.players.find((p: any) => p.id === session.userId);
-                if (player) {
-                    player.isConnected = false;
-
-                    // TODO: Implement host migration logic
-                    // TODO: Implement reconnection timeout
-
-                    io.to(session.roomCode).emit('room:updated', room);
-                }
-            }
-        }
-
         sessions.delete(socket.id);
+        // Ignore stale sockets that were already replaced by a reconnect
+        if (!session || session.socketId !== socket.id) return;
+
+        const room = session.roomCode && rooms.get(session.roomCode);
+        if (room) {
+            const player = room.players.find((p: any) => p.id === session.userId);
+            if (player) player.isConnected = false;
+            if (room.hostId === session.userId) migrateHost(room);
+            io.to(room.code).emit('room:updated', room);
+        }
+        // Keep the seat for the grace period, then drop the player
+        session.timer = setTimeout(() => dropUser(session), GRACE_MS);
     });
 });
 
