@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { GameState, Player, TradeOffer } from '@/game/types';
+import { GameState, Player, PlayerId, TradeOffer } from '@/game/types';
 import { getPropertyData } from '@/game/engine';
 import { PropertyColor } from '@/game/constants';
 
@@ -36,7 +36,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
 }) => {
   const { trade, players, ownedProperties } = gameState;
 
-  const [selectedPartner, setSelectedPartner] = useState<number | null>(null);
+  const [selectedPartner, setSelectedPartner] = useState<PlayerId | null>(null);
   const [offeredProperties, setOfferedProperties] = useState<number[]>([]);
   const [requestedProperties, setRequestedProperties] = useState<number[]>([]);
   const [offeredMoney, setOfferedMoney] = useState(0);

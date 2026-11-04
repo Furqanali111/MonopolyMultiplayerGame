@@ -3,9 +3,10 @@ import { GameState, Player, TradeOffer, AIDifficulty } from '@/game/types';
 import {
   initializeGame,
   rollDice,
-  isDoubles,
-  movePlayer,
-  resolveTile,
+  rollTurn,
+  rollForJailTurn,
+  leaveJail,
+  endTurn,
   buyProperty,
   startAuction,
   placeBid,
@@ -15,11 +16,7 @@ import {
   sellHouse,
   mortgageProperty,
   unmortgageProperty,
-  sendToJail,
-  releaseFromJail,
-  incrementJailTurn,
   checkWinCondition,
-  getNextPlayer,
   getPropertyOwner,
   getPropertyData,
   proposeTrade,
@@ -44,7 +41,15 @@ import {
   declineProperty as declinePropertySocket,
   endTurn as endTurnSocket,
   placeBid as placeBidSocket,
-  passAuction as passAuctionSocket
+  passAuction as passAuctionSocket,
+  rollForJail as rollForJailSocket,
+  payJailFine as payJailFineSocket,
+  useJailCard as useJailCardSocket,
+  proposeTrade as proposeTradeSocket,
+  acceptTrade as acceptTradeSocket,
+  declineTrade as declineTradeSocket,
+  attemptPayment as attemptPaymentSocket,
+  declareBankruptcy as declareBankruptcySocket,
 } from '@/services/socket';
 
 import { GameBoard } from '@/components/game/GameBoard';
@@ -262,122 +267,40 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     gameState,
   ]);
 
-  const handleRollDice = useCallback(() => {
+  // Single player runs the shared engine locally; online the server runs it.
+  const rollWithDelay = (turn: (state: GameState, dice: [number, number]) => GameState) => {
     if (isRolling) return;
-
-    // In multiplayer mode, send action to server
-    if (isMultiplayer) {
-      rollDiceSocket();
-      return;
-    }
-
-    // Single-player mode: execute locally
     setIsRolling(true);
-
     setTimeout(() => {
-      const dice = rollDice();
-      let newState = { ...gameState, lastDiceRoll: dice };
-      const player = newState.players[newState.currentPlayerIndex];
-
-      if (isDoubles(dice)) {
-        const newDoublesCount = player.doublesCount + 1;
-        newState.players = newState.players.map((p, i) =>
-          i === newState.currentPlayerIndex
-            ? { ...p, doublesCount: newDoublesCount }
-            : p
-        );
-
-        if (newDoublesCount >= 3) {
-          newState = sendToJail(newState, player.id);
-          newState.gameLog = [...newState.gameLog, `${player.name} rolled three doubles and goes to jail!`];
-          setGameState(newState);
-          setIsRolling(false);
-          return;
-        }
-      } else {
-        newState.players = newState.players.map((p, i) =>
-          i === newState.currentPlayerIndex
-            ? { ...p, doublesCount: 0 }
-            : p
-        );
-      }
-
-      const diceSum = dice[0] + dice[1];
-      newState = movePlayer(newState, player.id, diceSum);
-      newState = resolveTile(newState, player.id);
-
-      // If player rolled doubles and is not in jail, they get another turn
-      // This should happen regardless of the current turnPhase (action, endturn, etc.)
-      if (isDoubles(dice) && !newState.players[newState.currentPlayerIndex].inJail) {
-        // Only change to 'roll' if not in 'action' phase (waiting to buy property)
-        // If in 'action' phase, the buy/decline handler will set it to 'roll' after the action
-        if (newState.turnPhase === 'endturn') {
-          newState.turnPhase = 'roll';
-          newState.gameLog = [...newState.gameLog, `${player.name} gets another turn for rolling doubles!`];
-        }
-      }
-
-      setGameState(newState);
+      setGameState(prev => turn(prev, rollDice()));
       setIsRolling(false);
     }, 600);
-  }, [gameState, isRolling, isMultiplayer]);
+  };
+
+  const handleRollDice = useCallback(() => {
+    if (isMultiplayer) return rollDiceSocket();
+    rollWithDelay(rollTurn);
+  }, [isRolling, isMultiplayer]);
 
   const handleRollForJail = useCallback(() => {
-    if (isRolling) return;
-    setIsRolling(true);
-
-    setTimeout(() => {
-      const dice = rollDice();
-      let newState = { ...gameState, lastDiceRoll: dice };
-      const player = newState.players[newState.currentPlayerIndex];
-
-      if (isDoubles(dice)) {
-        newState = releaseFromJail(newState, player.id, 'doubles');
-        const diceSum = dice[0] + dice[1];
-        newState = movePlayer(newState, player.id, diceSum);
-        newState = resolveTile(newState, player.id);
-      } else {
-        newState = incrementJailTurn(newState, player.id);
-        newState.turnPhase = 'endturn';
-        newState.gameLog = [...newState.gameLog, `${player.name} failed to roll doubles`];
-      }
-
-      setGameState(newState);
-      setIsRolling(false);
-    }, 600);
-  }, [gameState, isRolling]);
+    if (isMultiplayer) return rollForJailSocket();
+    rollWithDelay(rollForJailTurn);
+  }, [isRolling, isMultiplayer]);
 
   const handlePayJailFine = useCallback(() => {
-    let newState = releaseFromJail(gameState, currentPlayer.id, 'fine');
-    newState.turnPhase = 'roll';
-    setGameState(newState);
-  }, [gameState, currentPlayer]);
+    if (isMultiplayer) return payJailFineSocket();
+    setGameState(prev => leaveJail(prev, prev.players[prev.currentPlayerIndex].id, 'fine'));
+  }, [isMultiplayer]);
 
   const handleUseJailCard = useCallback(() => {
-    let newState = releaseFromJail(gameState, currentPlayer.id, 'card');
-    newState.turnPhase = 'roll';
-    setGameState(newState);
-  }, [gameState, currentPlayer]);
+    if (isMultiplayer) return useJailCardSocket();
+    setGameState(prev => leaveJail(prev, prev.players[prev.currentPlayerIndex].id, 'card'));
+  }, [isMultiplayer]);
 
   const handleBuyProperty = useCallback(() => {
-    // In multiplayer mode, send action to server
-    if (isMultiplayer) {
-      buyPropertySocket();
-      return;
-    }
-
-    // Single-player mode: execute locally
-    let newState = buyProperty(gameState, currentPlayer.id, currentPlayer.position);
-    // If player rolled doubles, give them another turn; otherwise end turn
-    const player = newState.players[newState.currentPlayerIndex];
-    if (player.doublesCount > 0) {
-      newState.turnPhase = 'roll';
-      // Don't add log message here - it was already added in handleRollDice
-    } else {
-      newState.turnPhase = 'endturn';
-    }
-    setGameState(newState);
-  }, [gameState, currentPlayer, isMultiplayer]);
+    if (isMultiplayer) return buyPropertySocket();
+    setGameState(prev => buyProperty(prev, currentPlayer.id, currentPlayer.position));
+  }, [currentPlayer, isMultiplayer]);
 
   const handleDeclineProperty = useCallback(() => {
     // In multiplayer mode, send action to server
@@ -534,74 +457,46 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [gameState, currentPlayer]);
 
   const handleEndTurn = useCallback(() => {
-    // In multiplayer mode, send action to server
-    if (isMultiplayer) {
-      endTurnSocket();
-      return;
-    }
-
-    // Single-player mode: execute locally
-    const nextPlayerIndex = getNextPlayer(gameState);
-    const nextPlayer = gameState.players[nextPlayerIndex];
-
-    // Reset doubles count for the player ending their turn
-    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    const updatedPlayers = gameState.players.map(p =>
-      p.id === currentPlayer.id ? { ...p, doublesCount: 0 } : p
-    );
-
-    setGameState(prev => ({
-      ...prev,
-      players: updatedPlayers,
-      currentPlayerIndex: nextPlayerIndex,
-      turnPhase: nextPlayer.inJail ? 'injail' : 'roll',
-      lastDiceRoll: null,
-      specialRentMultiplier: null, // Clear special rent multiplier on turn end
-    }));
-  }, [gameState, isMultiplayer]);
+    if (isMultiplayer) return endTurnSocket();
+    setGameState(prev => endTurn(prev));
+  }, [isMultiplayer]);
 
   const handleProposeTrade = useCallback((offer: Omit<TradeOffer, 'active'>) => {
-    const newState = proposeTrade(gameState, offer);
-    setGameState(newState);
+    if (isMultiplayer) proposeTradeSocket(offer);
+    else setGameState(prev => proposeTrade(prev, offer));
     setShowTrade(false);
-  }, [gameState]);
+  }, [isMultiplayer]);
 
   const handleAcceptTrade = useCallback(() => {
-    const newState = acceptTrade(gameState);
-    setGameState(newState);
-  }, [gameState]);
+    if (isMultiplayer) return acceptTradeSocket();
+    setGameState(prev => acceptTrade(prev));
+  }, [isMultiplayer]);
 
   const handleDeclineTrade = useCallback(() => {
-    const newState = declineTrade(gameState);
-    setGameState(newState);
-  }, [gameState]);
+    if (isMultiplayer) return declineTradeSocket();
+    setGameState(prev => declineTrade(prev));
+  }, [isMultiplayer]);
 
   const handleAttemptPayment = useCallback(() => {
+    if (isMultiplayer) return attemptPaymentSocket();
     if (!gameState.bankruptcyState) return;
-
     const { playerId, amountOwed, creditorId, reason } = gameState.bankruptcyState;
-    const newState = attemptPayment(gameState, playerId, amountOwed, creditorId, reason);
-    setGameState(newState);
-  }, [gameState]);
+    setGameState(attemptPayment(gameState, playerId, amountOwed, creditorId, reason));
+  }, [gameState, isMultiplayer]);
 
   const handleDeclareBankruptcy = useCallback(() => {
+    if (isMultiplayer) return declareBankruptcySocket();
     if (!gameState.bankruptcyState) return;
-
     const { playerId, creditorId } = gameState.bankruptcyState;
-    const newState = declareBankruptcy(gameState, playerId, creditorId);
-    setGameState({
-      ...newState,
-      phase: 'playing',
-      bankruptcyState: null,
-    });
-  }, [gameState]);
+    setGameState({ ...declareBankruptcy(gameState, playerId, creditorId), phase: 'playing', bankruptcyState: null });
+  }, [gameState, isMultiplayer]);
 
   const canRoll = gameState.turnPhase === 'roll' && !isRolling && !currentPlayer.isAI;
   const isHumanTurn = !currentPlayer.isAI;
 
   // In multiplayer, check if it's this player's turn
   // Convert both IDs to strings for comparison since multiplayer uses string IDs
-  const isMyTurn = !isMultiplayer || (currentUserId && String(currentPlayer.id) === String(currentUserId));
+  const isMyTurn = !isMultiplayer || (currentUserId && currentPlayer.id === currentUserId);
 
   console.log('🎯 Turn control:', {
     isMultiplayer,

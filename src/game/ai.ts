@@ -1,8 +1,7 @@
 import { 
   GameState, 
   Player, 
-  AIDifficulty 
-} from './types';
+  AIDifficulty, PlayerId } from './types';
 import {
   getPropertyData,
   getPropertyOwner,
@@ -22,7 +21,7 @@ interface AIDecision {
 }
 
 // Utility function to get player's owned properties
-function getPlayerProperties(state: GameState, playerId: number) {
+function getPlayerProperties(state: GameState, playerId: PlayerId) {
   return state.ownedProperties.filter(p => p.ownerId === playerId);
 }
 

@@ -1,9 +1,11 @@
 import { Property, CardData } from './constants';
 
+export type PlayerId = string;
+
 export type AIDifficulty = 'easy' | 'medium';
 
 export interface Player {
-  id: number;
+  id: PlayerId;
   name: string;
   color: string;
   money: number;
@@ -20,7 +22,7 @@ export interface Player {
 
 export interface OwnedProperty {
   position: number;
-  ownerId: number;
+  ownerId: PlayerId;
   houses: number; // 0-4 for houses, 5 for hotel
   isMortgaged: boolean;
 }
@@ -29,16 +31,16 @@ export interface AuctionState {
   active: boolean;
   propertyPosition: number;
   currentBid: number;
-  currentBidder: number | null;
-  participants: number[]; // Player IDs still in auction
-  passedPlayers: number[]; // Player IDs who passed
+  currentBidder: PlayerId | null;
+  participants: PlayerId[]; // Player IDs still in auction
+  passedPlayers: PlayerId[]; // Player IDs who passed
   currentBidderIndex: number; // Index in participants array for whose turn it is
 }
 
 export interface TradeOffer {
   active: boolean;
-  fromPlayer: number;
-  toPlayer: number;
+  fromPlayer: PlayerId;
+  toPlayer: PlayerId;
   offeredProperties: number[]; // positions
   requestedProperties: number[]; // positions
   offeredMoney: number;
@@ -48,9 +50,9 @@ export interface TradeOffer {
 }
 
 export interface BankruptcyState {
-  playerId: number; // Who needs to pay
+  playerId: PlayerId; // Who needs to pay
   amountOwed: number; // How much they owe
-  creditorId: number | null; // Who they owe (null for bank)
+  creditorId: PlayerId | null; // Who they owe (null for bank)
   reason: string; // Description of why they owe
 }
 
@@ -69,7 +71,7 @@ export interface GameState {
   auction: AuctionState | null;
   trade: TradeOffer | null;
   bankruptcyState: BankruptcyState | null;
-  winner: number | null;
+  winner: PlayerId | null;
   preAuctionPlayerIndex?: number;
   gameLog: string[];
   diceMultiplierForRent: number; // For utility rent calculation
@@ -93,4 +95,4 @@ export type GameAction =
   | { type: 'PROPOSE_TRADE'; offer: Omit<TradeOffer, 'active'> }
   | { type: 'ACCEPT_TRADE' }
   | { type: 'DECLINE_TRADE' }
-  | { type: 'DECLARE_BANKRUPTCY'; creditorId: number | null };
+  | { type: 'DECLARE_BANKRUPTCY'; creditorId: PlayerId | null };
