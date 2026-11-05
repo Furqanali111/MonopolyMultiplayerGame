@@ -209,6 +209,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       const walked = steps > 0 && steps <= 12;
       if (e.type === 'move' && e.passedGo) setFx({ id: Date.now(), kind: 'go', delay: walked ? (40 - e.from) * 0.11 : 0.2 });
       if (e.type === 'jail' && e.inJail) setFx({ id: Date.now(), kind: 'jail', delay: 0.4 });
+      if (e.type === 'trade' && e.status === 'resolved' && events.some((x) => x.type === 'property' || x.type === 'money')) {
+        // An accepted trade changes owners or cash in the same step; a declined one changes nothing
+        const t = lastState.current.trade;
+        const name = (id?: string) => gameState.players.find((p) => p.id === id)?.name ?? '';
+        setFx({ id: Date.now(), kind: 'trade', delay: 0, label: t ? `${name(t.fromPlayer)} and ${name(t.toPlayer)} trade` : 'Trade made' });
+      }
       if (e.type === 'auction' && e.status === 'ended') {
         const won = events.find((x) => x.type === 'property' && x.position === e.position && x.ownerId);
         const buyerId = won?.type === 'property' ? won.ownerId : null;

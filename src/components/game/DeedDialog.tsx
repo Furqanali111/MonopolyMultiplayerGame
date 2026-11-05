@@ -5,7 +5,6 @@ import { BOARD_TILES } from '@/game/constants';
 import { canBuildHouse, canMortgage, canSellHouse, canUnmortgage, getPropertyData, getPropertyOwner, hasMonopoly } from '@/game/engine';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Tilt } from '@/components/game/Tilt';
 import { Pawn, PROPERTY_HEX, PROPERTY_LABEL, readableOn } from '@/components/game/kit';
 
 interface DeedDialogProps {
@@ -40,11 +39,10 @@ export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onC
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[340px] border-0 bg-transparent p-0 shadow-none sm:p-0">
+      <DialogContent className="max-w-[340px] overflow-hidden p-0">
         <DialogTitle className="sr-only">{tile.name}</DialogTitle>
         <DialogDescription className="sr-only">Title deed and rent schedule</DialogDescription>
 
-        <Tilt className="overflow-hidden rounded-lg border border-border bg-card shadow-[0_28px_70px_-24px_rgba(0,0,0,0.85)]">
         <div
           className="px-5 pb-3 pt-5"
           style={{ background: property?.color ? PROPERTY_HEX[property.color] : 'hsl(var(--ink-raised))', color: property?.color ? readableOn(PROPERTY_HEX[property.color]) : undefined }}
@@ -180,7 +178,6 @@ export const DeedDialog: React.FC<DeedDialogProps> = ({ position, gameState, onC
             Close
           </Button>
         </div>
-        </Tilt>
       </DialogContent>
     </Dialog>
   );

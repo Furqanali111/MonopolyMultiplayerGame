@@ -4,11 +4,10 @@ import * as THREE from 'three';
 import { SHAPES } from '@/components/game/tokenShapes';
 import type { Player } from '@/game/types';
 import { centerOf, restingOffset, walkTrack } from '@/components/game/GameBoard';
-import { Buildings3D } from '@/components/game/Buildings3D';
 import { CANVAS_EXTEND, VIEW_TILT_DEG } from '@/lib/boardTilt';
 
 /**
- * Pawns and buildings as 3D pieces over the flat board. One world unit is 1% of the board width,
+ * Pawns as 3D pieces over the flat board. One world unit is 1% of the board width,
  * origin at the board centre. The camera looks down at a tilt, and ground positions are stretched by
  * 1/cos(tilt) in depth, so a piece's footprint lands exactly on its tile while the piece itself is
  * seen at an angle.
@@ -140,12 +139,11 @@ interface Tokens3DProps {
   players: Player[];
   offsets: Map<string, Offset>;
   activeId?: string;
-  lots: { position: number; houses: number }[];
   /** Called once the layer has mounted, so the flat pieces can step aside */
   onReady?: () => void;
 }
 
-const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, lots, onReady }) => {
+const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, onReady }) => {
   useEffect(() => onReady?.(), []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Canvas
@@ -159,7 +157,6 @@ const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, lots, o
       <Rig />
       <ambientLight intensity={1.1} />
       <directionalLight position={[-25, -20, 50]} intensity={2.4} />
-      <Buildings3D lots={lots} toWorld={toWorld} />
       {players.map((p, i) => (
         <Token key={p.id} player={p} index={i} offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }} active={activeId === p.id} />
       ))}

@@ -128,12 +128,10 @@ interface TileProps {
   position: number;
   owned?: GameState['ownedProperties'][number];
   owner?: Player;
-  /** The 3D layer draws the buildings, so the flat ones step aside */
-  hideBuildings?: boolean;
   onClick?: () => void;
 }
 
-const BoardTile = memo(function BoardTile({ tile, position, owned, owner, hideBuildings, onClick }: TileProps) {
+const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClick }: TileProps) {
   const orientation = orientationOf(position);
   const isCorner = orientation === 'corner';
   const property = tile.property;
@@ -170,7 +168,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, hideBu
           className={cn('absolute flex items-center justify-center gap-[2px]', BAND[orientation])}
           style={{ background: PROPERTY_HEX[group!] }}
         >
-          {houses > 0 && !hideBuildings && <Building houses={houses} animate={settled.current} />}
+          {houses > 0 && <Building houses={houses} animate={settled.current} />}
         </span>
       )}
 
@@ -324,8 +322,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
   const use3d = !reduce && webglAvailable() && !failed;
-  const three = use3d && ready; // the 3D layer is up: flat pieces and buildings step aside
-  const lots = useMemo(() => ownedProperties.filter((o) => o.houses > 0).map(({ position, houses }) => ({ position, houses })), [ownedProperties]);
+  const three = use3d && ready; // the 3D layer is up: the flat pawns step aside
   const pawns2d = (
     <>
       {live.map((p) => (
@@ -354,7 +351,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
           position={position}
           owned={ownedByPos.get(position)}
           owner={ownedByPos.has(position) ? playersById.get(ownedByPos.get(position)!.ownerId) : undefined}
-          hideBuildings={three}
           onClick={() => onTileClick?.(position)}
         />
       ))}
@@ -391,7 +387,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
         <div className="pointer-events-none absolute" style={{ inset: `-${CANVAS_EXTEND * 100}%` }}>
           <Fallback fallback={null} onFail={() => setFailed(true)}>
             <Suspense fallback={null}>
-              <Tokens3D players={players} offsets={offsets} activeId={players[currentPlayerIndex]?.id} lots={lots} onReady={() => setReady(true)} />
+              <Tokens3D players={players} offsets={offsets} activeId={players[currentPlayerIndex]?.id} onReady={() => setReady(true)} />
             </Suspense>
           </Fallback>
         </div>

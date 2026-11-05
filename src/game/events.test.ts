@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initializeGame, rollTurn, buyProperty, endTurn, startAuction, placeBid, passAuction } from './engine';
+import { initializeGame, rollTurn, buyProperty, endTurn, startAuction, placeBid, passAuction, proposeTrade, acceptTrade, declineTrade } from './engine';
 import { diffEvents } from './events';
 
 describe('diffEvents', () => {
@@ -65,5 +65,26 @@ describe('auction end', () => {
     expect(ev).toContainEqual(expect.objectContaining({ type: 'auction', status: 'ended', position: 6 }));
     expect(ev.find(e => e.type === 'property')).toMatchObject({ position: 6, ownerId: '0' });
     expect(ev).toContainEqual(expect.objectContaining({ type: 'money', playerId: '0', delta: -50 }));
+  });
+});
+
+describe('trade end', () => {
+  const offer = { fromPlayer: '0', toPlayer: '1', offeredProperties: [6], requestedProperties: [], offeredMoney: 0, requestedMoney: 100, offeredCards: 0, requestedCards: 0 };
+  const proposed = () => proposeTrade(buyProperty(initializeGame(2, 'easy'), '0', 6), offer);
+
+  it('an accepted trade resolves and changes owners and cash in the same diff', () => {
+    const g = proposed();
+    expect(g.trade).toBeTruthy();
+    const ev = diffEvents(g, acceptTrade(g));
+    expect(ev).toContainEqual(expect.objectContaining({ type: 'trade', status: 'resolved' }));
+    expect(ev.find(e => e.type === 'property')).toMatchObject({ position: 6, ownerId: '1' });
+    expect(ev.some(e => e.type === 'money')).toBe(true);
+  });
+
+  it('a declined trade resolves and changes nothing else', () => {
+    const g = proposed();
+    const ev = diffEvents(g, declineTrade(g));
+    expect(ev).toContainEqual(expect.objectContaining({ type: 'trade', status: 'resolved' }));
+    expect(ev.some(e => e.type === 'property' || e.type === 'money')).toBe(false);
   });
 });
