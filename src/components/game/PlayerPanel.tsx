@@ -4,6 +4,7 @@ import { Bot, Key, Lock, Star, WifiOff } from 'lucide-react';
 import { Player, GameState } from '@/game/types';
 import { getPropertyData, hasMonopoly } from '@/game/engine';
 import { BOARD_TILES, PropertyColor } from '@/game/constants';
+import { ChipStack } from '@/components/game/ChipStack';
 import { Money, Pawn, PROPERTY_HEX, PROPERTY_LABEL } from '@/components/game/kit';
 import { cn } from '@/lib/utils';
 
@@ -64,6 +65,7 @@ export const PlayerPanel: React.FC<PlayerPanelProps> = ({
             )}
           </p>
         </div>
+        {!player.isBankrupt && <ChipStack money={player.money} />}
         <div className="text-right">
           <Money value={player.money} className="text-[17px] font-semibold" />
           <div className="mt-0.5 flex items-center justify-end gap-2 text-[11px] text-muted-foreground">

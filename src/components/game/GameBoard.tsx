@@ -21,6 +21,7 @@ import { Building } from '@/components/game/Building';
 import { CardDecks } from '@/components/game/CardDecks';
 import { Fallback } from '@/components/game/Fallback';
 import { webglAvailable } from '@/lib/webgl';
+import { BOARD_TILT_DEG, CANVAS_EXTEND, PERSPECTIVE } from '@/lib/boardTilt';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
 import { spring } from '@/lib/motion';
@@ -127,10 +128,12 @@ interface TileProps {
   position: number;
   owned?: GameState['ownedProperties'][number];
   owner?: Player;
+  /** The 3D layer draws the buildings, so the flat ones step aside */
+  hideBuildings?: boolean;
   onClick?: () => void;
 }
 
-const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClick }: TileProps) {
+const BoardTile = memo(function BoardTile({ tile, position, owned, owner, hideBuildings, onClick }: TileProps) {
   const orientation = orientationOf(position);
   const isCorner = orientation === 'corner';
   const property = tile.property;
@@ -167,7 +170,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
           className={cn('absolute flex items-center justify-center gap-[2px]', BAND[orientation])}
           style={{ background: PROPERTY_HEX[group!] }}
         >
-          {houses > 0 && <Building houses={houses} animate={settled.current} />}
+          {houses > 0 && !hideBuildings && <Building houses={houses} animate={settled.current} />}
         </span>
       )}
 
@@ -316,7 +319,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
   const offsets = slotOffsets(live);
   const pawnSize = Math.max(16, Math.min(32, width * 0.036));
   const reduce = useReducedMotion();
-  const use3d = !reduce && webglAvailable();
+  const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
+  const use3d = !reduce && webglAvailable() && !failed;
+  const three = use3d && ready; // the 3D layer is up: flat pieces and buildings step aside
+  const lots = useMemo(() => ownedProperties.filter((o) => o.houses > 0).map(({ position, houses }) => ({ position, houses })), [ownedProperties]);
   const pawns2d = (
     <>
       {live.map((p) => (
@@ -331,12 +338,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
     </>
   );
 
+  const lean = use3d ? `perspective(${PERSPECTIVE * width}px) rotateX(${BOARD_TILT_DEG}deg)` : undefined;
+
   return (
-    <div
-      ref={ref}
-      className="board relative aspect-square w-full border border-border bg-background brass-rule"
-      style={{ display: 'grid', gridTemplateColumns: TRACK, gridTemplateRows: TRACK }}
-    >
+    <div className="relative w-full">
+      {use3d && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-[3%] rounded-xl bg-black/70 blur-2xl"
+          style={{ transform: `translateY(4%) ${lean}` }}
+        />
+      )}
+      <div
+        ref={ref}
+        className="board relative aspect-square w-full border border-border bg-background brass-rule"
+        style={{ display: 'grid', gridTemplateColumns: TRACK, gridTemplateRows: TRACK, transform: lean }}
+      >
       {BOARD_TILES.map((tile, position) => (
         <BoardTile
           key={position}
@@ -344,6 +361,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
           position={position}
           owned={ownedByPos.get(position)}
           owner={ownedByPos.has(position) ? playersById.get(ownedByPos.get(position)!.ownerId) : undefined}
+          hideBuildings={three}
           onClick={() => onTileClick?.(position)}
         />
       ))}
@@ -351,7 +369,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
       {/* The felt well: wordmark, supply, dice tray and the latest event live here */}
       <div className="well relative overflow-hidden" style={{ gridColumn: '2 / 11', gridRow: '2 / 11' }}>
         <Noise opacity={0.12} fps={0} blendMode="soft-light" />
-        <CardDecks seq={gameState.cardSeq ?? 0} last={gameState.lastCard?.type} />
+        <CardDecks seq={gameState.cardSeq ?? 0} last={gameState.lastCard?.type} text={gameState.lastCard?.text} />
         <div className="relative flex h-full w-full flex-col items-center justify-between p-[4%]">
           <div className="text-center">
             <div className="well-wordmark font-display text-[clamp(14px,3.6cqw,34px)] leading-none text-bone/80">{PRODUCT_NAME}</div>
@@ -370,18 +388,20 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
         </div>
       </div>
 
-      {/* One layer for every pawn, so walking tile by tile is a single animation */}
-      <div className="pointer-events-none absolute inset-0">
-        {use3d ? (
-          <Fallback fallback={pawns2d}>
-            <Suspense fallback={pawns2d}>
-              <Tokens3D players={live} offsets={offsets} activeId={players[currentPlayerIndex]?.id} />
+      {/* The flat pawns, until the 3D layer is ready or if it is not available */}
+      <div className="pointer-events-none absolute inset-0">{three ? null : pawns2d}</div>
+      </div>
+
+      {/* Pieces and buildings in 3D. A sibling of the board, not a child, so the tilt does not flatten them. */}
+      {use3d && (
+        <div className="pointer-events-none absolute" style={{ inset: `-${CANVAS_EXTEND * 100}%` }}>
+          <Fallback fallback={null} onFail={() => setFailed(true)}>
+            <Suspense fallback={null}>
+              <Tokens3D players={live} offsets={offsets} activeId={players[currentPlayerIndex]?.id} lots={lots} onReady={() => setReady(true)} />
             </Suspense>
           </Fallback>
-        ) : (
-          pawns2d
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
