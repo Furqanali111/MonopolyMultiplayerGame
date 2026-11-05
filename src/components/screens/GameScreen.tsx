@@ -197,11 +197,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       return !!p && !p.isAI && (!isMultiplayer || p.id === currentUserId);
     });
     // Flourishes wait for the pawn: it walks 0.11s a tile, a jump takes ~0.4s
-    for (const e of diffEvents(lastState.current, gameState)) {
+    const events = diffEvents(lastState.current, gameState);
+    for (const e of events) {
       const steps = e.type === 'move' ? (e.to - e.from + 40) % 40 : 0;
       const walked = steps > 0 && steps <= 12;
       if (e.type === 'move' && e.passedGo) setFx({ id: Date.now(), kind: 'go', delay: walked ? (40 - e.from) * 0.11 : 0.2 });
       if (e.type === 'jail' && e.inJail) setFx({ id: Date.now(), kind: 'jail', delay: 0.4 });
+      if (e.type === 'auction' && e.status === 'ended') {
+        const won = events.find((x) => x.type === 'property' && x.position === e.position && x.ownerId);
+        const buyerId = won?.type === 'property' ? won.ownerId : null;
+        const paid = events.find((x) => x.type === 'money' && x.playerId === buyerId);
+        const buyer = gameState.players.find((p) => p.id === buyerId);
+        if (buyer && paid?.type === 'money') setFx({ id: Date.now(), kind: 'sold', delay: 0, label: `${buyer.name} · $${-paid.delta}` });
+      }
     }
     lastState.current = gameState;
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -20,6 +20,7 @@ import Noise from '@/components/Noise';
 import { Building } from '@/components/game/Building';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
+import { spring } from '@/lib/motion';
 
 type Tile = (typeof BOARD_TILES)[number];
 type Orientation = 'top' | 'bottom' | 'left' | 'right' | 'corner';
@@ -140,6 +141,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
   useEffect(() => {
     settled.current = true;
   }, []);
+  const reduce = useReducedMotion();
 
   return (
     <button
@@ -192,8 +194,13 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
       </span>
 
       {owner && (
-        <span
+        <motion.span
+          key={owner.id}
           aria-hidden
+          // Stamped down only when ownership changes after the board first drew
+          initial={settled.current && !reduce ? { scale: 2.6, rotate: -14, opacity: 0 } : false}
+          animate={{ scale: 1, rotate: 0, opacity: 1 }}
+          transition={spring}
           className="absolute bottom-[4%] right-[4%] grid place-items-center rounded-[2px] font-semibold leading-none"
           style={{
             background: owner.color,
@@ -204,7 +211,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
           }}
         >
           {owner.name.charAt(0)}
-        </span>
+        </motion.span>
       )}
       {owned?.isMortgaged && (
         <span className="absolute left-[6%] top-[4%] rounded-[2px] bg-ruby/80 px-[3px] text-[8px] font-semibold leading-tight text-bone">M</span>
