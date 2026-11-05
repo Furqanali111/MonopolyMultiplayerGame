@@ -1,21 +1,21 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SHAPES } from '@/components/game/tokenShapes';
 import type { Player } from '@/game/types';
 import { centerOf, restingOffset, walkTrack } from '@/components/game/GameBoard';
 import { Buildings3D } from '@/components/game/Buildings3D';
-import { BOARD_TILT_DEG, CANVAS_EXTEND, PERSPECTIVE } from '@/lib/boardTilt';
+import { CANVAS_EXTEND, VIEW_TILT_DEG } from '@/lib/boardTilt';
 
 /**
- * Pawns and buildings as 3D pieces over the board. One world unit is 1% of the board width, origin at
- * the board centre. Everything stands on a plane tilted like the CSS board, seen by a camera at the
- * same distance as the CSS perspective, so each piece lands exactly on its tile.
+ * Pawns and buildings as 3D pieces over the flat board. One world unit is 1% of the board width,
+ * origin at the board centre. The camera looks down at a tilt, and ground positions are stretched by
+ * 1/cos(tilt) in depth, so a piece's footprint lands exactly on its tile while the piece itself is
+ * seen at an angle.
  */
-const TILT = (BOARD_TILT_DEG * Math.PI) / 180;
-const CAMERA_Z = PERSPECTIVE * 100;
+const TILT = (VIEW_TILT_DEG * Math.PI) / 180;
+const COS = Math.cos(TILT);
 const CANVAS_UNITS = 100 * (1 + 2 * CANVAS_EXTEND);
-const FOV = (2 * Math.atan(CANVAS_UNITS / 2 / CAMERA_Z) * 180) / Math.PI;
 const STEP_SECONDS = 0.11; // same walk speed as the 2D pawn and the step sounds
 const SLIDE_SECONDS = 0.4;
 const HOP = 2.2;
@@ -24,7 +24,7 @@ type Offset = { dx: number; dy: number };
 type Pt = { x: number; y: number };
 
 /** Board percent to world ground position */
-const toWorld = (x: number, y: number): Pt => ({ x: x - 50, y: -(y - 50) });
+const toWorld = (x: number, y: number): Pt => ({ x: x - 50, y: -(y - 50) / COS });
 const restPoint = (position: number, o: Offset): Pt => {
   const c = centerOf(position);
   const r = restingOffset(position);
@@ -108,6 +108,23 @@ function Token({ player, index, offset, active }: { player: Player; index: numbe
   );
 }
 
+/** Keeps the camera matched to the canvas: 100 world units always span the board width. */
+function Rig() {
+  const { camera, size, invalidate } = useThree();
+  useLayoutEffect(() => {
+    const cam = camera as THREE.OrthographicCamera;
+    cam.zoom = size.width / CANVAS_UNITS;
+    cam.position.set(0, -60 * Math.sin(TILT), 60 * Math.cos(TILT));
+    cam.up.set(0, 1, 0);
+    cam.lookAt(0, 0, 0);
+    cam.near = 0.1;
+    cam.far = 300;
+    cam.updateProjectionMatrix();
+    invalidate();
+  }, [camera, size.width, size.height, invalidate]);
+  return null;
+}
+
 interface Tokens3DProps {
   players: Player[];
   offsets: Map<string, Offset>;
@@ -122,20 +139,19 @@ const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, lots, o
   return (
     <Canvas
       aria-hidden
+      orthographic
       frameloop="demand"
       dpr={[1, 2]}
-      camera={{ fov: FOV, position: [0, 0, CAMERA_Z], near: 10, far: 1000 }}
       gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }}
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
     >
+      <Rig />
       <ambientLight intensity={1.1} />
-      <directionalLight position={[-60, 90, 260]} intensity={2.4} />
-      <group rotation={[-TILT, 0, 0]}>
-        <Buildings3D lots={lots} toWorld={toWorld} />
-        {players.map((p, i) => (
-          <Token key={p.id} player={p} index={i} offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }} active={activeId === p.id} />
-        ))}
-      </group>
+      <directionalLight position={[-25, -20, 50]} intensity={2.4} />
+      <Buildings3D lots={lots} toWorld={toWorld} />
+      {players.map((p, i) => (
+        <Token key={p.id} player={p} index={i} offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }} active={activeId === p.id} />
+      ))}
     </Canvas>
   );
 };

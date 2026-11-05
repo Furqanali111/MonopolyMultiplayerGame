@@ -21,7 +21,7 @@ import { Building } from '@/components/game/Building';
 import { CardDecks } from '@/components/game/CardDecks';
 import { Fallback } from '@/components/game/Fallback';
 import { webglAvailable } from '@/lib/webgl';
-import { BOARD_TILT_DEG, CANVAS_EXTEND, PERSPECTIVE } from '@/lib/boardTilt';
+import { CANVAS_EXTEND } from '@/lib/boardTilt';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
 import { spring } from '@/lib/motion';
@@ -298,9 +298,11 @@ interface GameBoardProps {
   gameState: GameState;
   onTileClick?: (position: number) => void;
   children?: React.ReactNode;
+  /** Drawn over the whole board, inside it, so it tilts with the board */
+  overlay?: React.ReactNode;
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, children }) => {
+export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, children, overlay }) => {
   const { players, ownedProperties, currentPlayerIndex } = gameState;
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
@@ -338,21 +340,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
     </>
   );
 
-  const lean = use3d ? `perspective(${PERSPECTIVE * width}px) rotateX(${BOARD_TILT_DEG}deg)` : undefined;
-
   return (
     <div className="relative w-full">
-      {use3d && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-[3%] rounded-xl bg-black/70 blur-2xl"
-          style={{ transform: `translateY(4%) ${lean}` }}
-        />
-      )}
       <div
         ref={ref}
         className="board relative aspect-square w-full border border-border bg-background brass-rule"
-        style={{ display: 'grid', gridTemplateColumns: TRACK, gridTemplateRows: TRACK, transform: lean }}
+        style={{ display: 'grid', gridTemplateColumns: TRACK, gridTemplateRows: TRACK }}
       >
       {BOARD_TILES.map((tile, position) => (
         <BoardTile
@@ -390,6 +383,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
 
       {/* The flat pawns, until the 3D layer is ready or if it is not available */}
       <div className="pointer-events-none absolute inset-0">{three ? null : pawns2d}</div>
+      {overlay}
       </div>
 
       {/* Pieces and buildings in 3D. A sibling of the board, not a child, so the tilt does not flatten them. */}

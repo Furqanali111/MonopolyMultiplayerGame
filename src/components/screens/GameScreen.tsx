@@ -460,15 +460,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
       <main className="mx-auto grid max-w-[1500px] gap-3 p-3 md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="mx-auto w-full" style={{ maxWidth: 'min(100%, calc(100dvh - 5.5rem))' }}>
-          <div className="relative">
-            <GameBoard gameState={gameState} onTileClick={setInspect}>
-              <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
-              <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
-                {latest}
-              </p>
-            </GameBoard>
-            <BoardFx fx={fx} onDone={() => setFx(null)} />
-          </div>
+          {/* The effects live inside the board so they lean with it */}
+          <GameBoard gameState={gameState} onTileClick={setInspect} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
+            <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
+            <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
+              {latest}
+            </p>
+          </GameBoard>
           <p className="mt-2 text-center text-[12px] text-muted-foreground md:hidden">Tap any tile to read its deed.</p>
         </div>
 

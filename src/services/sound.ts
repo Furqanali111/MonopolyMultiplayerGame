@@ -335,13 +335,13 @@ function loadSamples(c: AudioContext) {
   });
 }
 
-function sample(c: AudioContext, at: number, part: Part) {
+function sample(c: AudioContext, at: number, part: Part, pitch = 1) {
   const loaded = part.pick.filter((f) => buffers.has(f));
   const buffer = buffers.get(loaded[Math.floor(Math.random() * loaded.length)]);
   if (!buffer) return;
   const src = c.createBufferSource();
   src.buffer = buffer;
-  src.playbackRate.value = (part.rate ?? 1) * rand(0.96, 1.04);
+  src.playbackRate.value = (part.rate ?? 1) * pitch * rand(0.96, 1.04);
   const g = c.createGain();
   g.gain.value = part.gain ?? 1;
   src.connect(g).connect(master!);
@@ -359,15 +359,18 @@ function duck(at: number, seconds = 1.3) {
   g.setTargetAtTime(1, at + seconds, 0.5);
 }
 
-/** Play a sound now, or `delay` seconds from now. */
-export function play(name: Sfx, delay = 0) {
+/**
+ * Play a sound now, or `delay` seconds from now. `pitch` scales recorded samples only;
+ * shortcut: the synth fallback ignores it, fine while the samples ship with the game.
+ */
+export function play(name: Sfx, delay = 0, pitch = 1) {
   const c = audio();
   if (!c) return;
   const t = c.currentTime + delay;
   if (DUCKS.has(name)) duck(t);
   const recorded = SAMPLED[name];
   if (recorded && recorded.parts.every((p) => p.pick.some((f) => buffers.has(f)))) {
-    recorded.parts.forEach((p) => sample(c, t + (p.at ?? 0), p));
+    recorded.parts.forEach((p) => sample(c, t + (p.at ?? 0), p, pitch));
     recorded.synth?.(c, t);
   } else {
     PLAYERS[name](c, t);
@@ -487,7 +490,8 @@ export function playChange(prev: GameState, next: GameState, isMine: (id: string
     play('clack', Date.now() - rattledAt > 2500 ? 0.5 : 0);
     if (isDoubles(dice)) play('sparkle', 0.65);
   }
-  if (walked) for (let i = 1; i <= steps; i++) play(i === steps ? 'stepLast' : 'step', i * STEP_SECONDS - 0.06);
+  // Each hop is a little higher than the last, so a long walk sounds like it is climbing
+  if (walked) for (let i = 1; i <= steps; i++) play(i === steps ? 'stepLast' : 'step', i * STEP_SECONDS - 0.06, 1 + i * 0.025);
 
   const money = events.filter((e) => e.type === 'money');
   const passedGo = !!move?.passedGo;
