@@ -68,6 +68,42 @@ describe('jail and turn flow', () => {
     expect(s.turnPhase).toBe('roll');
   });
 
+  // Regression: single player calls the engine straight from the buttons, so the engine itself has to
+  // refuse jail actions outside a jail turn. Otherwise a player just sent to jail can roll again, and
+  // clicking three times uses up all three jail turns inside the same turn.
+  describe('only on a jail turn', () => {
+    const justSent = () => rollTurn(at(newGame(), 28), [1, 1]); // lands on Go To Jail (30)
+
+    it('being sent to jail ends the turn', () => {
+      const s = justSent();
+      expect(s.players[0].inJail).toBe(true);
+      expect(s.turnPhase).toBe('endturn');
+    });
+
+    it('cannot roll for doubles again on the turn you were sent', () => {
+      let s = justSent();
+      for (let i = 0; i < 3; i++) s = rollForJailTurn(s, [1, 2]);
+      expect(s.players[0].inJail).toBe(true);
+      expect(s.players[0].jailTurns).toBe(0);
+      expect(s.players[0].money).toBe(justSent().players[0].money); // no forced fine either
+    });
+
+    it('cannot pay the fine or use a card to get an extra roll on that turn', () => {
+      const g = justSent();
+      const rich = { ...g, players: g.players.map((p, i) => (i === 0 ? { ...p, getOutOfJailCards: 1 } : p)) };
+      expect(leaveJail(rich, '0', 'fine').players[0].inJail).toBe(true);
+      expect(leaveJail(rich, '0', 'card').players[0].inJail).toBe(true);
+      expect(leaveJail(rich, '0', 'fine').turnPhase).toBe('endturn');
+    });
+
+    it('a real jail turn allows exactly one roll', () => {
+      const first = rollForJailTurn(jailed(), [1, 2]);
+      expect(first.players[0].jailTurns).toBe(1);
+      const again = rollForJailTurn(first, [1, 2]); // phase is now endturn
+      expect(again.players[0].jailTurns).toBe(1);
+    });
+  });
+
   it('endTurn skips bankrupt players, resets doubles, flags jailed next player', () => {
     const g = newGame();
     g.players[0].doublesCount = 2;
