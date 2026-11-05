@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Home, Volume2, VolumeX } from 'lucide-react';
+import { Home } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { dur, ease } from '@/lib/motion';
@@ -77,7 +77,8 @@ import { diffEvents } from '@/game/events';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRODUCT_NAME } from '@/lib/brand';
-import { isMuted, play, playChange, rollSound, setMuted } from '@/services/sound';
+import { SoundMenu } from '@/components/game/SoundMenu';
+import { play, playChange, rollSound, startMusic, stopMusic } from '@/services/sound';
 
 /** How long a card someone else drew stays up, unless dismissed first */
 const CARD_READ_MS = 15_000;
@@ -130,7 +131,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [deadline, setDeadline] = useState<{ playerId: string; at: number; total: number } | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const seenCard = useRef(gameState.cardSeq ?? 0);
-  const [muted, setMutedState] = useState(isMuted());
+
+  // Music plays while the table is open
+  useEffect(() => {
+    startMusic();
+    return stopMusic;
+  }, []);
   const lastState = useRef(gameState);
   const [fx, setFx] = useState<Fx | null>(null);
 
@@ -436,19 +442,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </Button>
           )}
           <span className="font-display text-lg leading-none text-gold">{PRODUCT_NAME}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            aria-label={muted ? 'Turn sound on' : 'Turn sound off'}
-            aria-pressed={!muted}
-            onClick={() => {
-              setMuted(!muted);
-              setMutedState(!muted);
-            }}
-          >
-            {muted ? <VolumeX /> : <Volume2 />}
-          </Button>
+          <SoundMenu className="ml-auto" />
           <div className="flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
             <Pawn color={currentPlayer.color} name={currentPlayer.name} size={24} />
             <motion.span
