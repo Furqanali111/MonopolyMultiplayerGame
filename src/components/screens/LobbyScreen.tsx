@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Bot, Check, Copy, Crown, Loader2, LogOut, Play, Plus, WifiOff, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,8 @@ import {
   toggleReady,
 } from '@/services/socket';
 import { cn } from '@/lib/utils';
+import { play } from '@/services/sound';
+import { dur, ease } from '@/lib/motion';
 
 interface LobbyScreenProps {
   currentUser: { id: string; username: string };
@@ -39,6 +42,21 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const reduce = useReducedMotion();
+
+  // A little sound when someone sits down or readies up, not for what was already here when we arrived
+  const seen = useRef<Map<string, boolean> | null>(null);
+  useEffect(() => {
+    if (!room) return;
+    const now = new Map(room.players.map((p) => [p.id, !!p.isReady]));
+    const before = seen.current;
+    seen.current = now;
+    if (!before) return;
+    now.forEach((ready, id) => {
+      if (!before.has(id)) play('bid');
+      else if (ready && !before.get(id)) play('tradeYes');
+    });
+  }, [room]);
 
   useEffect(() => {
     const updated = (r: Room) => setRoom(r);
@@ -246,8 +264,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
             </span>
           </div>
           <ul className="divide-y divide-border border-y border-border">
+            <AnimatePresence initial={false}>
             {room.players.map((p) => (
-              <li key={p.id} className="flex min-h-16 items-center gap-3 py-2">
+              <motion.li
+                key={p.id}
+                layout="position"
+                initial={reduce ? false : { opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={reduce ? undefined : { opacity: 0, x: 16 }}
+                transition={{ duration: dur.base, ease: ease.out }}
+                className="flex min-h-16 items-center gap-3 py-2"
+              >
                 <Pawn color={p.color} name={p.username} size={38} />
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 truncate text-[16px] font-semibold">
@@ -264,8 +291,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
                     <X />
                   </Button>
                 )}
-              </li>
+              </motion.li>
             ))}
+            </AnimatePresence>
             {Array.from({ length: Math.max(0, empty) }).map((_, i) => (
               <li key={`empty-${i}`} className="flex min-h-16 items-center gap-3 py-2">
                 <span className="grid h-[38px] w-[38px] place-items-center rounded-full border border-dashed border-border text-muted-foreground" aria-hidden>
