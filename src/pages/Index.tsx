@@ -7,6 +7,8 @@ import { GameScreen } from '@/components/screens/GameScreen';
 import { GameOverScreen } from '@/components/screens/GameOverScreen';
 import { LoginScreen } from '@/components/screens/LoginScreen';
 import { LobbyScreen } from '@/components/screens/LobbyScreen';
+import { motion, useReducedMotion } from 'motion/react';
+import { screenIn } from '@/lib/motion';
 
 type Screen = 'home' | 'setup' | 'game' | 'gameover' | 'login' | 'lobby';
 
@@ -94,8 +96,11 @@ const Index = () => {
     setOnlineGameState(null);
   };
 
+  const reduce = useReducedMotion();
+
   return (
-    <>
+    // Keyed by screen so each one fades in on entry; reduced motion skips it
+    <motion.div key={screen} {...(reduce ? {} : screenIn)}>
       {screen === 'home' && (
         <HomeScreen
           onStartGame={handleStartSetup}
@@ -148,7 +153,7 @@ const Index = () => {
           online={isMultiplayer ? { onRematch: handleRematch } : undefined}
         />
       )}
-    </>
+    </motion.div>
   );
 };
 

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Home, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion } from 'motion/react';
+import { dur, ease } from '@/lib/motion';
 import { GameState, TradeOffer, AIDifficulty, HouseRules } from '@/game/types';
 import {
   initializeGame,
@@ -431,7 +433,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </Button>
           <div className="flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
             <Pawn color={currentPlayer.color} name={currentPlayer.name} size={24} />
-            <span className="truncate font-medium">{canAct ? 'Your turn' : `${currentPlayer.name}'s turn`}</span>
+            <motion.span
+              key={`${currentPlayer.id}-${canAct}`}
+              className="truncate font-medium"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: dur.base, ease: ease.out }}
+            >
+              {canAct ? 'Your turn' : `${currentPlayer.name}'s turn`}
+            </motion.span>
           </div>
         </div>
       </header>
