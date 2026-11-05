@@ -19,6 +19,8 @@ import { Pawn, PROPERTY_HEX } from '@/components/game/kit';
 import Noise from '@/components/Noise';
 import { Building } from '@/components/game/Building';
 import { CardDecks } from '@/components/game/CardDecks';
+import { Fallback } from '@/components/game/Fallback';
+import { webglAvailable } from '@/lib/webgl';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
 import { spring } from '@/lib/motion';
@@ -288,31 +290,6 @@ const PawnSprite: React.FC<{ player: Player; offset: { dx: number; dy: number };
 
 // three.js is its own chunk, fetched only when a table opens
 const Tokens3D = lazy(() => import('@/components/game/Tokens3D'));
-
-let webgl: boolean | undefined;
-/** 3D needs WebGL. `?2d` in the address forces the flat pawns, handy for comparing and for slow machines. */
-function webglAvailable(): boolean {
-  if (webgl === undefined) {
-    try {
-      const canvas = document.createElement('canvas');
-      webgl = !!(canvas.getContext('webgl2') || canvas.getContext('webgl')) && !new URLSearchParams(window.location.search).has('2d');
-    } catch {
-      webgl = false;
-    }
-  }
-  return webgl;
-}
-
-/** If the 3D layer throws (lost context, chunk fails to load), show the flat pawns instead. */
-class Fallback extends React.Component<{ fallback: React.ReactNode; children: React.ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
 
 interface GameBoardProps {
   gameState: GameState;
