@@ -1,10 +1,14 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Player, GameState } from '@/game/types';
 import { finalStandings } from '@/game/stats';
 import { Button } from '@/components/ui/button';
 import { Money, Pawn } from '@/components/game/kit';
 import { Shell } from '@/components/screens/Shell';
+import { Fallback } from '@/components/game/Fallback';
+import { webglAvailable } from '@/lib/webgl';
+
+const WinnerPiece = lazy(() => import('@/components/game/WinnerPiece'));
 import { PLAYER_COLORS } from '@/game/constants';
 import { onRematch, requestRematch, removeListener, Room } from '@/services/socket';
 
@@ -62,7 +66,17 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, winne
       {!reduce && <Confetti />}
       <motion.div initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}>
         <div className="flex items-center gap-4">
-          <Pawn color={winner.color} name={winner.name} size={56} />
+          {!reduce && webglAvailable() ? (
+            <div className="relative h-24 w-24 shrink-0" role="img" aria-label={`${winner.name}'s piece`}>
+              <Fallback fallback={<Pawn color={winner.color} name={winner.name} size={56} />}>
+                <Suspense fallback={<Pawn color={winner.color} name={winner.name} size={56} />}>
+                  <WinnerPiece index={Math.max(0, gameState.players.findIndex((p) => p.id === winner.id))} color={winner.color} />
+                </Suspense>
+              </Fallback>
+            </div>
+          ) : (
+            <Pawn color={winner.color} name={winner.name} size={56} />
+          )}
           <h1 className="font-display text-4xl leading-tight">{winner.name} wins</h1>
         </div>
 
