@@ -17,7 +17,20 @@ try {
   /* storage can be blocked; sound simply starts on */
 }
 
+export type Bus = 'music' | 'sfx';
+const volumes: Record<Bus, number> = { music: 0.35, sfx: 1 };
+try {
+  (['music', 'sfx'] as Bus[]).forEach((b) => {
+    const v = parseFloat(localStorage.getItem(`volume-${b}`) ?? '');
+    if (v >= 0 && v <= 1) volumes[b] = v;
+  });
+} catch {
+  /* defaults */
+}
+const buses: Partial<Record<Bus | 'duck', GainNode>> = {};
+
 export const isMuted = () => muted;
+export const getVolume = (bus: Bus) => volumes[bus];
 export function setMuted(value: boolean) {
   muted = value;
   try {
@@ -25,6 +38,17 @@ export function setMuted(value: boolean) {
   } catch {
     /* ignore */
   }
+  musicSync();
+}
+export function setVolume(bus: Bus, value: number) {
+  volumes[bus] = value;
+  try {
+    localStorage.setItem(`volume-${bus}`, String(value));
+  } catch {
+    /* ignore */
+  }
+  if (ctx) buses[bus]?.gain.setTargetAtTime(value, ctx.currentTime, 0.05);
+  if (bus === 'music') musicSync();
 }
 
 function audio(): AudioContext | null {
@@ -32,12 +56,21 @@ function audio(): AudioContext | null {
   try {
     if (!ctx) {
       ctx = new AudioContext();
-      // A compressor keeps a pile of coins from clipping
+      // Effects share one bus with a compressor so a pile of coins cannot clip
+      const sfx = ctx.createGain();
+      sfx.gain.value = volumes.sfx;
       const comp = ctx.createDynamicsCompressor();
       const gain = ctx.createGain();
       gain.gain.value = 0.9;
+      sfx.connect(comp);
       comp.connect(gain).connect(ctx.destination);
-      master = comp;
+      master = sfx;
+      // Music has its own volume and a duck stage that dips it under big cues
+      const music = ctx.createGain();
+      music.gain.value = volumes.music;
+      const duckStage = ctx.createGain();
+      music.connect(duckStage).connect(ctx.destination);
+      Object.assign(buses, { sfx, music, duck: duckStage });
       loadSamples(ctx);
     }
     if (ctx.state === 'suspended') void ctx.resume(); // browsers allow this after the first click
@@ -302,32 +335,130 @@ function loadSamples(c: AudioContext) {
   });
 }
 
-function sample(c: AudioContext, at: number, part: Part) {
+function sample(c: AudioContext, at: number, part: Part, pitch = 1) {
   const loaded = part.pick.filter((f) => buffers.has(f));
   const buffer = buffers.get(loaded[Math.floor(Math.random() * loaded.length)]);
   if (!buffer) return;
   const src = c.createBufferSource();
   src.buffer = buffer;
-  src.playbackRate.value = (part.rate ?? 1) * rand(0.96, 1.04);
+  src.playbackRate.value = (part.rate ?? 1) * pitch * rand(0.96, 1.04);
   const g = c.createGain();
   g.gain.value = part.gain ?? 1;
   src.connect(g).connect(master!);
   src.start(at);
 }
 
-/** Play a sound now, or `delay` seconds from now. */
-export function play(name: Sfx, delay = 0) {
+/** Cues big enough that the music should step back for a moment */
+const DUCKS = new Set<Sfx>(['clack', 'go', 'pot', 'hotel', 'cardChance', 'cardCommunity', 'jail', 'sold', 'win', 'bankrupt']);
+
+function duck(at: number, seconds = 1.3) {
+  const g = buses.duck?.gain;
+  if (!g) return;
+  g.cancelScheduledValues(at);
+  g.setTargetAtTime(0.3, at, 0.05);
+  g.setTargetAtTime(1, at + seconds, 0.5);
+}
+
+/**
+ * Play a sound now, or `delay` seconds from now. `pitch` scales recorded samples only;
+ * shortcut: the synth fallback ignores it, fine while the samples ship with the game.
+ */
+export function play(name: Sfx, delay = 0, pitch = 1) {
   const c = audio();
   if (!c) return;
   const t = c.currentTime + delay;
+  if (DUCKS.has(name)) duck(t);
   const recorded = SAMPLED[name];
   if (recorded && recorded.parts.every((p) => p.pick.some((f) => buffers.has(f)))) {
-    recorded.parts.forEach((p) => sample(c, t + (p.at ?? 0), p));
+    recorded.parts.forEach((p) => sample(c, t + (p.at ?? 0), p, pitch));
     recorded.synth?.(c, t);
   } else {
     PLAYERS[name](c, t);
   }
 }
+
+/**
+ * Background music, generated: a slow four chord loop (Am7, Fmaj7, Cmaj7, G6) with a soft pad,
+ * a bass note and a few sparse plucks. No file to license. shortcut: swap for a recorded loop if
+ * this ever sounds too thin; keep startMusic/stopMusic as the interface.
+ */
+const CHORDS = [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55, 59, 62, 64]];
+const BAR_SECONDS = 4;
+const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+let musicWanted = false;
+let musicTimer: ReturnType<typeof setInterval> | null = null;
+let musicNext = 0;
+let musicBar = 0;
+const musicVoices = new Set<OscillatorNode>();
+
+/** One soft voice on the music bus: slow fade in, fade out. */
+function voice(c: AudioContext, at: number, f: number, dur: number, peak: number, attack: number, type: OscillatorType = 'sine') {
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f, at);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.linearRampToValueAtTime(peak, at + attack);
+  g.gain.linearRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(buses.music!);
+  o.start(at);
+  o.stop(at + dur + 0.05);
+  musicVoices.add(o);
+  o.onended = () => musicVoices.delete(o);
+}
+
+function musicBarAt(c: AudioContext, at: number, bar: number) {
+  const chord = CHORDS[bar % CHORDS.length];
+  chord.forEach((m, i) => voice(c, at + i * 0.05, hz(m), BAR_SECONDS + 1, 0.05, 1.4, 'triangle'));
+  voice(c, at, hz(chord[0] - 24), BAR_SECONDS, 0.12, 0.3);
+  for (let beat = 0; beat < 4; beat++) {
+    if (Math.random() < 0.55) voice(c, at + beat + rand(0, 0.12), hz(chord[Math.floor(Math.random() * chord.length)] + 12), 1.4, 0.06, 0.02);
+  }
+}
+
+function musicTick() {
+  const c = ctx;
+  if (!c || !buses.music) return;
+  while (musicNext < c.currentTime + 2) {
+    musicBarAt(c, Math.max(musicNext, c.currentTime), musicBar++);
+    musicNext += BAR_SECONDS;
+  }
+}
+
+/** Play only when wanted, not muted, audible, and the tab is on screen. */
+function musicSync() {
+  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  const should = musicWanted && !muted && volumes.music > 0 && !hidden;
+  if (should && !musicTimer) {
+    const c = audio();
+    if (!c) return;
+    musicNext = c.currentTime + 0.1;
+    musicBar = 0;
+    musicTick();
+    musicTimer = setInterval(musicTick, 500);
+  } else if (!should && musicTimer) {
+    clearInterval(musicTimer);
+    musicTimer = null;
+    musicVoices.forEach((o) => {
+      try {
+        o.stop();
+      } catch {
+        /* already ended */
+      }
+    });
+    musicVoices.clear();
+  }
+}
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', musicSync);
+
+export const startMusic = () => {
+  musicWanted = true;
+  musicSync();
+};
+export const stopMusic = () => {
+  musicWanted = false;
+  musicSync();
+};
 
 let rattledAt = 0;
 /** Call on the roll click so the rattle starts at once; the result then only adds the landing. */
@@ -359,7 +490,8 @@ export function playChange(prev: GameState, next: GameState, isMine: (id: string
     play('clack', Date.now() - rattledAt > 2500 ? 0.5 : 0);
     if (isDoubles(dice)) play('sparkle', 0.65);
   }
-  if (walked) for (let i = 1; i <= steps; i++) play(i === steps ? 'stepLast' : 'step', i * STEP_SECONDS - 0.06);
+  // Each hop is a little higher than the last, so a long walk sounds like it is climbing
+  if (walked) for (let i = 1; i <= steps; i++) play(i === steps ? 'stepLast' : 'step', i * STEP_SECONDS - 0.06, 1 + i * 0.025);
 
   const money = events.filter((e) => e.type === 'money');
   const passedGo = !!move?.passedGo;

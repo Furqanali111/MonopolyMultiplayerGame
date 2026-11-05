@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Home, Volume2, VolumeX } from 'lucide-react';
+import { Home } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion } from 'motion/react';
+import { dur, ease } from '@/lib/motion';
 import { GameState, TradeOffer, AIDifficulty, HouseRules } from '@/game/types';
 import {
   initializeGame,
@@ -70,10 +72,13 @@ import { ChatPanel } from '@/components/game/ChatPanel';
 import { CardDisplay } from '@/components/game/CardDisplay';
 import { Pawn } from '@/components/game/kit';
 import { ChipFlights } from '@/components/game/ChipFlights';
+import { BoardFx, Fx } from '@/components/game/BoardFx';
+import { diffEvents } from '@/game/events';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRODUCT_NAME } from '@/lib/brand';
-import { isMuted, play, playChange, rollSound, setMuted } from '@/services/sound';
+import { SoundMenu } from '@/components/game/SoundMenu';
+import { play, playChange, rollSound, startMusic, stopMusic } from '@/services/sound';
 
 /** How long a card someone else drew stays up, unless dismissed first */
 const CARD_READ_MS = 15_000;
@@ -126,8 +131,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [deadline, setDeadline] = useState<{ playerId: string; at: number; total: number } | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const seenCard = useRef(gameState.cardSeq ?? 0);
-  const [muted, setMutedState] = useState(isMuted());
+
+  // Music plays while the table is open
+  useEffect(() => {
+    startMusic();
+    return stopMusic;
+  }, []);
   const lastState = useRef(gameState);
+  const [fx, setFx] = useState<Fx | null>(null);
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
 
@@ -191,6 +202,27 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       const p = gameState.players.find((x) => x.id === id);
       return !!p && !p.isAI && (!isMultiplayer || p.id === currentUserId);
     });
+    // Flourishes wait for the pawn: it walks 0.11s a tile, a jump takes ~0.4s
+    const events = diffEvents(lastState.current, gameState);
+    for (const e of events) {
+      const steps = e.type === 'move' ? (e.to - e.from + 40) % 40 : 0;
+      const walked = steps > 0 && steps <= 12;
+      if (e.type === 'move' && e.passedGo) setFx({ id: Date.now(), kind: 'go', delay: walked ? (40 - e.from) * 0.11 : 0.2 });
+      if (e.type === 'jail' && e.inJail) setFx({ id: Date.now(), kind: 'jail', delay: 0.4 });
+      if (e.type === 'trade' && e.status === 'resolved' && events.some((x) => x.type === 'property' || x.type === 'money')) {
+        // An accepted trade changes owners or cash in the same step; a declined one changes nothing
+        const t = lastState.current.trade;
+        const name = (id?: string) => gameState.players.find((p) => p.id === id)?.name ?? '';
+        setFx({ id: Date.now(), kind: 'trade', delay: 0, label: t ? `${name(t.fromPlayer)} and ${name(t.toPlayer)} trade` : 'Trade made' });
+      }
+      if (e.type === 'auction' && e.status === 'ended') {
+        const won = events.find((x) => x.type === 'property' && x.position === e.position && x.ownerId);
+        const buyerId = won?.type === 'property' ? won.ownerId : null;
+        const paid = events.find((x) => x.type === 'money' && x.playerId === buyerId);
+        const buyer = gameState.players.find((p) => p.id === buyerId);
+        if (buyer && paid?.type === 'money') setFx({ id: Date.now(), kind: 'sold', delay: 0, label: `${buyer.name} · $${-paid.delta}` });
+      }
+    }
     lastState.current = gameState;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState]);
@@ -416,29 +448,26 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </Button>
           )}
           <span className="font-display text-lg leading-none text-gold">{PRODUCT_NAME}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            aria-label={muted ? 'Turn sound on' : 'Turn sound off'}
-            aria-pressed={!muted}
-            onClick={() => {
-              setMuted(!muted);
-              setMutedState(!muted);
-            }}
-          >
-            {muted ? <VolumeX /> : <Volume2 />}
-          </Button>
+          <SoundMenu className="ml-auto" />
           <div className="flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
             <Pawn color={currentPlayer.color} name={currentPlayer.name} size={24} />
-            <span className="truncate font-medium">{canAct ? 'Your turn' : `${currentPlayer.name}'s turn`}</span>
+            <motion.span
+              key={`${currentPlayer.id}-${canAct}`}
+              className="truncate font-medium"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: dur.base, ease: ease.out }}
+            >
+              {canAct ? 'Your turn' : `${currentPlayer.name}'s turn`}
+            </motion.span>
           </div>
         </div>
       </header>
 
       <main className="mx-auto grid max-w-[1500px] gap-3 p-3 md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="mx-auto w-full" style={{ maxWidth: 'min(100%, calc(100dvh - 5.5rem))' }}>
-          <GameBoard gameState={gameState} onTileClick={setInspect}>
+          {/* The effects live inside the board so they lean with it */}
+          <GameBoard gameState={gameState} onTileClick={setInspect} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
             <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
             <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
               {latest}

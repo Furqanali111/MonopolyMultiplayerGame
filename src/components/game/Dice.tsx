@@ -1,5 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
+import { Fallback } from '@/components/game/Fallback';
+import { webglAvailable } from '@/lib/webgl';
+
+const Dice3D = lazy(() => import('@/components/game/Dice3D'));
 
 interface DiceProps {
   values: [number, number] | null;
@@ -57,6 +61,15 @@ export const Dice: React.FC<DiceProps> = ({ values, isRolling }) => {
     return () => clearInterval(id);
   }, [isRolling, values]);
 
+  const reduce = useReducedMotion();
+  const use3d = !reduce && webglAvailable();
+  const flat = (
+    <>
+      <Die value={faces[0]} rolling={isRolling} index={0} />
+      <Die value={faces[1]} rolling={isRolling} index={1} />
+    </>
+  );
+
   const total = values ? values[0] + values[1] : null;
   const doubles = !!values && values[0] === values[1];
 
@@ -65,8 +78,20 @@ export const Dice: React.FC<DiceProps> = ({ values, isRolling }) => {
       <div
         className="flex items-center gap-[clamp(6px,1.4cqw,14px)] rounded-[999px] bg-[hsl(151_62%_9%)] px-[clamp(14px,3cqw,30px)] py-[clamp(8px,1.6cqw,16px)] shadow-[inset_0_6px_14px_rgba(0,0,0,0.5),inset_0_0_0_1px_hsl(var(--gold)/0.22)]"
         role="img" aria-label={values ? `Rolled ${values[0]} and ${values[1]}` : 'Dice'}>
-        <Die value={faces[0]} rolling={isRolling} index={0} />
-        <Die value={faces[1]} rolling={isRolling} index={1} />
+        {use3d ? (
+          <Suspense fallback={flat}>
+            <Fallback fallback={flat}>
+              {/* Same footprint as two flat dice. The canvas is larger and overflows the tray so tumbling dice are not clipped. */}
+              <div className="relative" style={{ width: 'calc(2 * clamp(34px,7.4cqw,60px) + clamp(6px,1.4cqw,14px))', height: 'clamp(34px,7.4cqw,60px)' }}>
+                <div className="absolute" style={{ inset: '-100% -50%' }}>
+                  <Dice3D values={values} rolling={isRolling} />
+                </div>
+              </div>
+            </Fallback>
+          </Suspense>
+        ) : (
+          flat
+        )}
       </div>
       <div className="h-[1.4em] text-[clamp(10px,1.6cqw,14px)] tabular-nums text-bone/80" aria-live="polite">
         {!isRolling && total !== null && (

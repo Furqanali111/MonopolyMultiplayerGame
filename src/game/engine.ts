@@ -1532,6 +1532,9 @@ export function rollTurn(state: GameState, dice: [number, number]): GameState {
 
 /** Roll attempt for the current player while in jail. */
 export function rollForJailTurn(state: GameState, dice: [number, number]): GameState {
+  // One attempt per jail turn: the turn starts as 'injail' and a roll moves it on. Without this a player
+  // just sent to jail (phase 'endturn') could keep rolling and burn all three jail turns at once.
+  if (state.turnPhase !== 'injail') return state;
   const player = state.players[state.currentPlayerIndex];
   let s: GameState = { ...state, lastDiceRoll: dice, gameLog: [...state.gameLog, rollLine(player.name, dice)] };
 
@@ -1548,7 +1551,7 @@ export function rollForJailTurn(state: GameState, dice: [number, number]): GameS
 /** Pay the fine / use a card to leave jail; the player then rolls normally. */
 export function leaveJail(state: GameState, playerId: PlayerId, method: 'fine' | 'card'): GameState {
   const player = state.players.find(p => p.id === playerId);
-  if (!player || !player.inJail) return state;
+  if (!player || !player.inJail || state.turnPhase !== 'injail') return state; // only at the start of a jail turn
   if (method === 'fine' && player.money < JAIL_FINE) return state;
   if (method === 'card' && player.getOutOfJailCards < 1) return state;
   return { ...releaseFromJail(state, playerId, method), turnPhase: 'roll' };

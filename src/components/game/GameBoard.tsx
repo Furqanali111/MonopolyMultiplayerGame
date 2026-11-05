@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   ArrowRight,
@@ -18,8 +18,13 @@ import { BOARD_TILES } from '@/game/constants';
 import { Pawn, PROPERTY_HEX } from '@/components/game/kit';
 import Noise from '@/components/Noise';
 import { Building } from '@/components/game/Building';
+import { CardDecks } from '@/components/game/CardDecks';
+import { Fallback } from '@/components/game/Fallback';
+import { webglAvailable } from '@/lib/webgl';
+import { CANVAS_EXTEND } from '@/lib/boardTilt';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
+import { spring } from '@/lib/motion';
 
 type Tile = (typeof BOARD_TILES)[number];
 type Orientation = 'top' | 'bottom' | 'left' | 'right' | 'corner';
@@ -61,7 +66,7 @@ function orientationOf(position: number): Orientation {
 // Corners are 1.5 units wide, every other tile 1 unit: 12 units across.
 const TRACK = '1.5fr repeat(9, 1fr) 1.5fr';
 const unit = (i: number) => (i === 0 ? 0.75 : i === 10 ? 11.25 : i + 1);
-const centerOf = (position: number) => {
+export const centerOf = (position: number) => {
   const { col, row } = cellOf(position);
   return { x: (unit(col) / 12) * 100, y: (unit(row) / 12) * 100 };
 };
@@ -71,7 +76,7 @@ const centerOf = (position: number) => {
  * rest on the coloured band side (or toward the board's centre on corners and plain tiles)
  * instead of on top of the text.
  */
-function restingOffset(position: number): { dx: number; dy: number } {
+export function restingOffset(position: number): { dx: number; dy: number } {
   const u = 100 / 12;
   const orientation = orientationOf(position);
   const { col, row } = cellOf(position);
@@ -140,6 +145,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
   useEffect(() => {
     settled.current = true;
   }, []);
+  const reduce = useReducedMotion();
 
   return (
     <button
@@ -192,8 +198,13 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
       </span>
 
       {owner && (
-        <span
+        <motion.span
+          key={owner.id}
           aria-hidden
+          // Stamped down only when ownership changes after the board first drew
+          initial={settled.current && !reduce ? { scale: 2.6, rotate: -14, opacity: 0 } : false}
+          animate={{ scale: 1, rotate: 0, opacity: 1 }}
+          transition={spring}
           className="absolute bottom-[4%] right-[4%] grid place-items-center rounded-[2px] font-semibold leading-none"
           style={{
             background: owner.color,
@@ -204,7 +215,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
           }}
         >
           {owner.name.charAt(0)}
-        </span>
+        </motion.span>
       )}
       {owned?.isMortgaged && (
         <span className="absolute left-[6%] top-[4%] rounded-[2px] bg-ruby/80 px-[3px] text-[8px] font-semibold leading-tight text-bone">M</span>
@@ -213,8 +224,15 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
   );
 });
 
+/** Tiles a pawn passes through. Dice and short card moves walk tile by tile; jail and long jumps slide straight there. */
+export function walkTrack(from: number, to: number, inJail: boolean, reduce: boolean): number[] {
+  const steps = (to - from + 40) % 40;
+  const walk = !reduce && steps > 0 && steps <= 12 && !(to === 10 && inJail);
+  return walk ? Array.from({ length: steps }, (_, i) => (from + i + 1) % 40) : [to];
+}
+
 /** Where each pawn sits so several on one tile never overlap. */
-function slotOffsets(players: Player[]): Map<string, { dx: number; dy: number }> {
+export function slotOffsets(players: Player[]): Map<string, { dx: number; dy: number }> {
   const byTile = new Map<number, Player[]>();
   players.forEach((p) => byTile.set(p.position, [...(byTile.get(p.position) ?? []), p]));
   const out = new Map<string, { dx: number; dy: number }>();
@@ -244,10 +262,7 @@ const PawnSprite: React.FC<{ player: Player; offset: { dx: number; dy: number };
     const to = player.position;
     if (from === to) return;
     last.current = to;
-    const steps = (to - from + 40) % 40;
-    // Dice and short card moves walk tile by tile; jail and long jumps slide straight there
-    const walk = !reduce && steps > 0 && steps <= 12 && !(to === 10 && player.inJail);
-    setTrack(walk ? Array.from({ length: steps }, (_, i) => (from + i + 1) % 40) : [to]);
+    setTrack(walkTrack(from, to, player.inJail, !!reduce));
   }, [player.position, player.inJail, reduce]);
 
   // Walking tile by tile passes through tile centres; only the resting tile uses the offset spot
@@ -274,13 +289,18 @@ const PawnSprite: React.FC<{ player: Player; offset: { dx: number; dy: number };
   );
 };
 
+// three.js is its own chunk, fetched only when a table opens
+const Tokens3D = lazy(() => import('@/components/game/Tokens3D'));
+
 interface GameBoardProps {
   gameState: GameState;
   onTileClick?: (position: number) => void;
   children?: React.ReactNode;
+  /** Drawn over the whole board, inside it, so it lines up with the tiles */
+  overlay?: React.ReactNode;
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, children }) => {
+export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, children, overlay }) => {
   const { players, ownedProperties, currentPlayerIndex } = gameState;
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
@@ -298,57 +318,80 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
   const live = players.filter((p) => !p.isBankrupt);
   const offsets = slotOffsets(live);
   const pawnSize = Math.max(16, Math.min(32, width * 0.036));
-
-  return (
-    <div
-      ref={ref}
-      className="board relative aspect-square w-full border border-border bg-background brass-rule"
-      style={{ display: 'grid', gridTemplateColumns: TRACK, gridTemplateRows: TRACK }}
-    >
-      {BOARD_TILES.map((tile, position) => (
-        <BoardTile
-          key={position}
-          tile={tile}
-          position={position}
-          owned={ownedByPos.get(position)}
-          owner={ownedByPos.has(position) ? playersById.get(ownedByPos.get(position)!.ownerId) : undefined}
-          onClick={() => onTileClick?.(position)}
+  const reduce = useReducedMotion();
+  const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
+  const use3d = !reduce && webglAvailable() && !failed;
+  const three = use3d && ready; // the 3D layer is up: the flat pawns step aside
+  const pawns2d = (
+    <>
+      {live.map((p) => (
+        <PawnSprite
+          key={p.id}
+          player={p}
+          offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }}
+          size={pawnSize}
+          active={players[currentPlayerIndex]?.id === p.id}
         />
       ))}
+    </>
+  );
 
-      {/* The felt well: wordmark, supply, dice tray and the latest event live here */}
-      <div className="well relative overflow-hidden" style={{ gridColumn: '2 / 11', gridRow: '2 / 11' }}>
-        <Noise opacity={0.12} fps={0} blendMode="soft-light" />
-        <div className="relative flex h-full w-full flex-col items-center justify-between p-[4%]">
-          <div className="text-center">
-            <div className="well-wordmark font-display text-[clamp(14px,3.6cqw,34px)] leading-none text-bone/80">{PRODUCT_NAME}</div>
-            <div className="mt-1 flex items-center justify-center gap-3 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/60">
-              <span>{gameState.availableHouses} houses left</span>
-              <span aria-hidden>·</span>
-              <span>{gameState.availableHotels} hotels left</span>
-            </div>
-            {(gameState.rules?.freeParkingPot && (gameState.freeParkingPot ?? 0) > 0) && (
-              <div className="mt-1 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/80">
-                Free Parking pot ${gameState.freeParkingPot!.toLocaleString()}
-              </div>
-            )}
-          </div>
-          {children}
-        </div>
-      </div>
-
-      {/* One layer for every pawn, so walking tile by tile is a single animation */}
-      <div className="pointer-events-none absolute inset-0">
-        {live.map((p) => (
-          <PawnSprite
-            key={p.id}
-            player={p}
-            offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }}
-            size={pawnSize}
-            active={players[currentPlayerIndex]?.id === p.id}
+  return (
+    <div className="relative w-full">
+      <div
+        ref={ref}
+        className="board relative aspect-square w-full border border-border bg-background brass-rule"
+        style={{ display: 'grid', gridTemplateColumns: TRACK, gridTemplateRows: TRACK }}
+      >
+        {BOARD_TILES.map((tile, position) => (
+          <BoardTile
+            key={position}
+            tile={tile}
+            position={position}
+            owned={ownedByPos.get(position)}
+            owner={ownedByPos.has(position) ? playersById.get(ownedByPos.get(position)!.ownerId) : undefined}
+            onClick={() => onTileClick?.(position)}
           />
         ))}
+
+        {/* The felt well: wordmark, supply, dice tray and the latest event live here */}
+        <div className="well relative overflow-hidden" style={{ gridColumn: '2 / 11', gridRow: '2 / 11' }}>
+          <Noise opacity={0.12} fps={0} blendMode="soft-light" />
+          <CardDecks seq={gameState.cardSeq ?? 0} last={gameState.lastCard?.type} text={gameState.lastCard?.text} />
+          <div className="relative flex h-full w-full flex-col items-center justify-between p-[4%]">
+            <div className="text-center">
+              <div className="well-wordmark font-display text-[clamp(14px,3.6cqw,34px)] leading-none text-bone/80">{PRODUCT_NAME}</div>
+              <div className="mt-1 flex items-center justify-center gap-3 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/60">
+                <span>{gameState.availableHouses} houses left</span>
+                <span aria-hidden>·</span>
+                <span>{gameState.availableHotels} hotels left</span>
+              </div>
+              {(gameState.rules?.freeParkingPot && (gameState.freeParkingPot ?? 0) > 0) && (
+                <div className="mt-1 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/80">
+                  Free Parking pot ${gameState.freeParkingPot!.toLocaleString()}
+                </div>
+              )}
+            </div>
+            {children}
+          </div>
+        </div>
+
+        {/* The flat pawns, until the 3D layer is ready or if it is not available */}
+        <div className="pointer-events-none absolute inset-0">{three ? null : pawns2d}</div>
+        {overlay}
       </div>
+
+      {/* Pieces in 3D: a canvas a little larger than the board, so tall pieces on edge tiles are not cut off */}
+      {use3d && (
+        <div className="pointer-events-none absolute" style={{ inset: `-${CANVAS_EXTEND * 100}%` }}>
+          <Fallback fallback={null} onFail={() => setFailed(true)}>
+            <Suspense fallback={null}>
+              <Tokens3D players={players} offsets={offsets} activeId={players[currentPlayerIndex]?.id} onReady={() => setReady(true)} onLost={() => setFailed(true)} />
+            </Suspense>
+          </Fallback>
+        </div>
+      )}
     </div>
   );
 };

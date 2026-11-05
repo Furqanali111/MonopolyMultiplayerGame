@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { initializeGame } from '@/game/engine';
 import { autoStep } from '@/game/autopilot';
-import { play, playChange } from './sound';
+import { play, playChange, setMuted, setVolume, startMusic, stopMusic } from './sound';
 
 // A stand-in for Web Audio that records how many sounds were started
 let started = 0;
-const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} });
+const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
 const node = (): any => {
   const n: any = { connect: (to: any) => to ?? n, start: () => started++, stop() {}, frequency: param(), gain: param(), Q: param(), playbackRate: param() };
   return n;
@@ -39,6 +39,25 @@ describe('sound', () => {
       s = next;
     }
     expect(started).toBeGreaterThan(100);
+    vi.unstubAllGlobals();
+  });
+
+  it('music starts when wanted, stops on mute, and stays off at zero volume', () => {
+    vi.stubGlobal('AudioContext', FakeAudio);
+    const before = started;
+    startMusic();
+    expect(started).toBeGreaterThan(before); // the first bars are scheduled at once
+    setMuted(true);
+    const muted = started;
+    startMusic();
+    expect(started).toBe(muted); // nothing new while muted
+    setMuted(false);
+    setVolume('music', 0);
+    const silent = started;
+    startMusic();
+    expect(started).toBe(silent); // zero volume plays nothing
+    setVolume('music', 0.35);
+    stopMusic();
     vi.unstubAllGlobals();
   });
 });

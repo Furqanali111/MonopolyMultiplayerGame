@@ -79,7 +79,7 @@ export const ActionPanel: React.FC<ActionPanelProps> = ({
   if (!canAct) {
     heading = gameState.phase === 'auction' ? 'Auction in progress' : `${player.name} is playing`;
     detail = gameState.phase === 'auction' ? 'Bidding is open to everyone.' : phase === 'roll' ? 'Waiting for the roll.' : 'Waiting for their move.';
-  } else if (player.inJail) {
+  } else if (player.inJail && phase === 'injail') {
     heading = 'You are in jail';
     detail = `Attempt ${player.jailTurns + 1} of 3. Roll doubles to leave, or pay your way out.`;
     primary = (
@@ -124,8 +124,9 @@ export const ActionPanel: React.FC<ActionPanelProps> = ({
       </Button>
     );
   } else if (phase === 'endturn') {
-    heading = 'Wrap up your turn';
-    detail = 'Build, trade or manage deeds, then end your turn.';
+    // Just sent to jail: the turn is over, and the first jail attempt comes on the next one
+    heading = player.inJail ? 'You are in jail' : 'Wrap up your turn';
+    detail = player.inJail ? 'Your turn is over. You roll for doubles on your next turn.' : 'Build, trade or manage deeds, then end your turn.';
     primary = <Primary onClick={onEndTurn}>End turn</Primary>;
   } else {
     heading = BOARD_TILES[player.position].name;

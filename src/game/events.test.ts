@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initializeGame, rollTurn, buyProperty, endTurn } from './engine';
+import { initializeGame, rollTurn, buyProperty, endTurn, startAuction, placeBid, passAuction, proposeTrade, acceptTrade, declineTrade } from './engine';
 import { diffEvents } from './events';
 
 describe('diffEvents', () => {
@@ -24,6 +24,25 @@ describe('diffEvents', () => {
   });
 });
 
+describe('passedGo', () => {
+  const moved = (from: number, to: number, inJail = false) => {
+    const g = initializeGame(2, 'easy');
+    const at = (position: number, jailed: boolean) => ({ ...g, players: g.players.map((p, i) => (i ? p : { ...p, position, inJail: jailed })) });
+    return diffEvents(at(from, false), at(to, inJail)).find(e => e.type === 'move');
+  };
+
+  it('is true for a wrap, landing on GO, and a card that wraps a short way', () => {
+    expect(moved(38, 3)).toMatchObject({ passedGo: true });
+    expect(moved(36, 0)).toMatchObject({ passedGo: true });
+    expect(moved(7, 5)).toMatchObject({ passedGo: true }); // Chance to Reading Railroad
+  });
+
+  it('is false for Go Back 3 and Go To Jail', () => {
+    expect(moved(7, 4)).toMatchObject({ passedGo: false });
+    expect(moved(30, 10, true)).toMatchObject({ passedGo: false });
+  });
+});
+
 describe('card events', () => {
   it('reports a drawn card even though the card resolves in the same step', () => {
     const g = initializeGame(2, 'easy');
@@ -31,5 +50,41 @@ describe('card events', () => {
     const next = rollTurn(g, [1, 1]);
     expect(next.cardSeq).toBe(1);
     expect(diffEvents(g, next).some(e => e.type === 'card')).toBe(true);
+  });
+});
+
+describe('auction end', () => {
+  it('reports the winning property and the winner paying, in one diff', () => {
+    let g = startAuction(initializeGame(2, 'easy'), 6); // you plus 2 AI
+    const bidder = () => g.auction!.participants.filter(id => !g.auction!.passedPlayers.includes(id))[g.auction!.currentBidderIndex % (g.auction!.participants.length - g.auction!.passedPlayers.length)];
+    g = placeBid(g, bidder(), 50);
+    g = passAuction(g, bidder());
+    const before = g; // one bidder still has to pass, which ends it
+    g = passAuction(g, bidder());
+    const ev = diffEvents(before, g);
+    expect(ev).toContainEqual(expect.objectContaining({ type: 'auction', status: 'ended', position: 6 }));
+    expect(ev.find(e => e.type === 'property')).toMatchObject({ position: 6, ownerId: '0' });
+    expect(ev).toContainEqual(expect.objectContaining({ type: 'money', playerId: '0', delta: -50 }));
+  });
+});
+
+describe('trade end', () => {
+  const offer = { fromPlayer: '0', toPlayer: '1', offeredProperties: [6], requestedProperties: [], offeredMoney: 0, requestedMoney: 100, offeredCards: 0, requestedCards: 0 };
+  const proposed = () => proposeTrade(buyProperty(initializeGame(2, 'easy'), '0', 6), offer);
+
+  it('an accepted trade resolves and changes owners and cash in the same diff', () => {
+    const g = proposed();
+    expect(g.trade).toBeTruthy();
+    const ev = diffEvents(g, acceptTrade(g));
+    expect(ev).toContainEqual(expect.objectContaining({ type: 'trade', status: 'resolved' }));
+    expect(ev.find(e => e.type === 'property')).toMatchObject({ position: 6, ownerId: '1' });
+    expect(ev.some(e => e.type === 'money')).toBe(true);
+  });
+
+  it('a declined trade resolves and changes nothing else', () => {
+    const g = proposed();
+    const ev = diffEvents(g, declineTrade(g));
+    expect(ev).toContainEqual(expect.objectContaining({ type: 'trade', status: 'resolved' }));
+    expect(ev.some(e => e.type === 'property' || e.type === 'money')).toBe(false);
   });
 });

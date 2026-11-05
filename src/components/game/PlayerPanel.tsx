@@ -4,6 +4,7 @@ import { Bot, Key, Lock, Star, WifiOff } from 'lucide-react';
 import { Player, GameState } from '@/game/types';
 import { getPropertyData, hasMonopoly } from '@/game/engine';
 import { BOARD_TILES, PropertyColor } from '@/game/constants';
+import { ChipStack } from '@/components/game/ChipStack';
 import { Money, Pawn, PROPERTY_HEX, PROPERTY_LABEL } from '@/components/game/kit';
 import { cn } from '@/lib/utils';
 
@@ -38,9 +39,9 @@ export const PlayerPanel: React.FC<PlayerPanelProps> = ({
       layout="position"
       aria-current={isCurrentPlayer ? 'true' : undefined}
       className={cn(
-        'relative border bg-card px-3 py-2.5 transition-colors duration-200',
+        'relative border bg-card px-3 py-2.5 transition-[color,background-color,border-color,opacity,filter] duration-500',
         isCurrentPlayer ? 'border-gold/60 bg-gold/[0.06]' : 'border-border',
-        player.isBankrupt && 'opacity-45'
+        player.isBankrupt && 'opacity-45 grayscale'
       )}
       style={{ borderRadius: 6 }}
     >
@@ -64,6 +65,7 @@ export const PlayerPanel: React.FC<PlayerPanelProps> = ({
             )}
           </p>
         </div>
+        {!player.isBankrupt && <ChipStack money={player.money} />}
         <div className="text-right">
           <Money value={player.money} className="text-[17px] font-semibold" />
           <div className="mt-0.5 flex items-center justify-end gap-2 text-[11px] text-muted-foreground">
