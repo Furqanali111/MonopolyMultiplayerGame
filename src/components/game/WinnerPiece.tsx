@@ -1,10 +1,9 @@
-import React, { useLayoutEffect, useRef } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import React, { useRef } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SHAPES } from '@/components/game/tokenShapes';
-import { VIEW_TILT_DEG } from '@/lib/boardTilt';
+import { IsoRig } from '@/components/game/IsoRig';
 
-const TILT = (VIEW_TILT_DEG * Math.PI) / 180;
 const GOLD = '#E8B84A';
 
 /** The winner's piece, big, turning slowly on a gold ring: it drops in from above and settles. */
@@ -32,24 +31,9 @@ function Piece({ index, color }: { index: number; color: string }) {
   );
 }
 
-function Rig() {
-  const { camera, size } = useThree();
-  useLayoutEffect(() => {
-    const cam = camera as THREE.OrthographicCamera;
-    cam.zoom = size.width / 11;
-    cam.position.set(0, -60 * Math.sin(TILT), 60 * Math.cos(TILT) + 3);
-    cam.up.set(0, 1, 0);
-    cam.lookAt(0, 0, 3);
-    cam.near = 0.1;
-    cam.far = 300;
-    cam.updateProjectionMatrix();
-  }, [camera, size.width, size.height]);
-  return null;
-}
-
 const WinnerPiece: React.FC<{ index: number; color: string }> = ({ index, color }) => (
   <Canvas aria-hidden orthographic dpr={[1, 2]} gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }} style={{ position: 'absolute', inset: 0 }}>
-    <Rig />
+    <IsoRig units={11} lookAtZ={3} />
     <ambientLight intensity={1.1} />
     <directionalLight position={[-25, -20, 50]} intensity={2.4} />
     <Piece index={index} color={color} />

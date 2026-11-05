@@ -1,7 +1,8 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SHAPES } from '@/components/game/tokenShapes';
+import { IsoRig } from '@/components/game/IsoRig';
 import type { Player } from '@/game/types';
 import { centerOf, restingOffset, walkTrack } from '@/components/game/GameBoard';
 import { CANVAS_EXTEND, VIEW_TILT_DEG } from '@/lib/boardTilt';
@@ -118,32 +119,17 @@ function Token({ player, index, offset, active }: { player: Player; index: numbe
   );
 }
 
-/** Keeps the camera matched to the canvas: 100 world units always span the board width. */
-function Rig() {
-  const { camera, size, invalidate } = useThree();
-  useLayoutEffect(() => {
-    const cam = camera as THREE.OrthographicCamera;
-    cam.zoom = size.width / CANVAS_UNITS;
-    cam.position.set(0, -60 * Math.sin(TILT), 60 * Math.cos(TILT));
-    cam.up.set(0, 1, 0);
-    cam.lookAt(0, 0, 0);
-    cam.near = 0.1;
-    cam.far = 300;
-    cam.updateProjectionMatrix();
-    invalidate();
-  }, [camera, size.width, size.height, invalidate]);
-  return null;
-}
-
 interface Tokens3DProps {
   players: Player[];
   offsets: Map<string, Offset>;
   activeId?: string;
   /** Called once the layer has mounted, so the flat pieces can step aside */
   onReady?: () => void;
+  /** The browser dropped the WebGL context (GPU reset, too many contexts): the board shows flat pawns again */
+  onLost?: () => void;
 }
 
-const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, onReady }) => {
+const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, onReady, onLost }) => {
   useEffect(() => onReady?.(), []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Canvas
@@ -151,10 +137,11 @@ const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, onReady
       orthographic
       frameloop="demand"
       dpr={[1, 2]}
+      onCreated={({ gl }) => gl.domElement.addEventListener('webglcontextlost', () => onLost?.())}
       gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }}
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
     >
-      <Rig />
+      <IsoRig units={CANVAS_UNITS} />
       <ambientLight intensity={1.1} />
       <directionalLight position={[-25, -20, 50]} intensity={2.4} />
       {players.map((p, i) => (

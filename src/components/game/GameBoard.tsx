@@ -296,7 +296,7 @@ interface GameBoardProps {
   gameState: GameState;
   onTileClick?: (position: number) => void;
   children?: React.ReactNode;
-  /** Drawn over the whole board, inside it, so it tilts with the board */
+  /** Drawn over the whole board, inside it, so it lines up with the tiles */
   overlay?: React.ReactNode;
 }
 
@@ -344,50 +344,50 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
         className="board relative aspect-square w-full border border-border bg-background brass-rule"
         style={{ display: 'grid', gridTemplateColumns: TRACK, gridTemplateRows: TRACK }}
       >
-      {BOARD_TILES.map((tile, position) => (
-        <BoardTile
-          key={position}
-          tile={tile}
-          position={position}
-          owned={ownedByPos.get(position)}
-          owner={ownedByPos.has(position) ? playersById.get(ownedByPos.get(position)!.ownerId) : undefined}
-          onClick={() => onTileClick?.(position)}
-        />
-      ))}
+        {BOARD_TILES.map((tile, position) => (
+          <BoardTile
+            key={position}
+            tile={tile}
+            position={position}
+            owned={ownedByPos.get(position)}
+            owner={ownedByPos.has(position) ? playersById.get(ownedByPos.get(position)!.ownerId) : undefined}
+            onClick={() => onTileClick?.(position)}
+          />
+        ))}
 
-      {/* The felt well: wordmark, supply, dice tray and the latest event live here */}
-      <div className="well relative overflow-hidden" style={{ gridColumn: '2 / 11', gridRow: '2 / 11' }}>
-        <Noise opacity={0.12} fps={0} blendMode="soft-light" />
-        <CardDecks seq={gameState.cardSeq ?? 0} last={gameState.lastCard?.type} text={gameState.lastCard?.text} />
-        <div className="relative flex h-full w-full flex-col items-center justify-between p-[4%]">
-          <div className="text-center">
-            <div className="well-wordmark font-display text-[clamp(14px,3.6cqw,34px)] leading-none text-bone/80">{PRODUCT_NAME}</div>
-            <div className="mt-1 flex items-center justify-center gap-3 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/60">
-              <span>{gameState.availableHouses} houses left</span>
-              <span aria-hidden>·</span>
-              <span>{gameState.availableHotels} hotels left</span>
-            </div>
-            {(gameState.rules?.freeParkingPot && (gameState.freeParkingPot ?? 0) > 0) && (
-              <div className="mt-1 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/80">
-                Free Parking pot ${gameState.freeParkingPot!.toLocaleString()}
+        {/* The felt well: wordmark, supply, dice tray and the latest event live here */}
+        <div className="well relative overflow-hidden" style={{ gridColumn: '2 / 11', gridRow: '2 / 11' }}>
+          <Noise opacity={0.12} fps={0} blendMode="soft-light" />
+          <CardDecks seq={gameState.cardSeq ?? 0} last={gameState.lastCard?.type} text={gameState.lastCard?.text} />
+          <div className="relative flex h-full w-full flex-col items-center justify-between p-[4%]">
+            <div className="text-center">
+              <div className="well-wordmark font-display text-[clamp(14px,3.6cqw,34px)] leading-none text-bone/80">{PRODUCT_NAME}</div>
+              <div className="mt-1 flex items-center justify-center gap-3 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/60">
+                <span>{gameState.availableHouses} houses left</span>
+                <span aria-hidden>·</span>
+                <span>{gameState.availableHotels} hotels left</span>
               </div>
-            )}
+              {(gameState.rules?.freeParkingPot && (gameState.freeParkingPot ?? 0) > 0) && (
+                <div className="mt-1 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/80">
+                  Free Parking pot ${gameState.freeParkingPot!.toLocaleString()}
+                </div>
+              )}
+            </div>
+            {children}
           </div>
-          {children}
         </div>
+
+        {/* The flat pawns, until the 3D layer is ready or if it is not available */}
+        <div className="pointer-events-none absolute inset-0">{three ? null : pawns2d}</div>
+        {overlay}
       </div>
 
-      {/* The flat pawns, until the 3D layer is ready or if it is not available */}
-      <div className="pointer-events-none absolute inset-0">{three ? null : pawns2d}</div>
-      {overlay}
-      </div>
-
-      {/* Pieces and buildings in 3D. A sibling of the board, not a child, so the tilt does not flatten them. */}
+      {/* Pieces in 3D: a canvas a little larger than the board, so tall pieces on edge tiles are not cut off */}
       {use3d && (
         <div className="pointer-events-none absolute" style={{ inset: `-${CANVAS_EXTEND * 100}%` }}>
           <Fallback fallback={null} onFail={() => setFailed(true)}>
             <Suspense fallback={null}>
-              <Tokens3D players={players} offsets={offsets} activeId={players[currentPlayerIndex]?.id} onReady={() => setReady(true)} />
+              <Tokens3D players={players} offsets={offsets} activeId={players[currentPlayerIndex]?.id} onReady={() => setReady(true)} onLost={() => setFailed(true)} />
             </Suspense>
           </Fallback>
         </div>
