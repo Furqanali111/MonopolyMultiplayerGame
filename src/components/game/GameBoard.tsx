@@ -391,7 +391,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
         <div className="pointer-events-none absolute" style={{ inset: `-${CANVAS_EXTEND * 100}%` }}>
           <Fallback fallback={null} onFail={() => setFailed(true)}>
             <Suspense fallback={null}>
-              <Tokens3D players={live} offsets={offsets} activeId={players[currentPlayerIndex]?.id} lots={lots} onReady={() => setReady(true)} />
+              <Tokens3D players={players} offsets={offsets} activeId={players[currentPlayerIndex]?.id} lots={lots} onReady={() => setReady(true)} />
             </Suspense>
           </Fallback>
         </div>

@@ -40,6 +40,8 @@ function Token({ player, index, offset, active }: { player: Player; index: numbe
   const start = useMemo(() => restPoint(player.position, offset), []); // eslint-disable-line react-hooks/exhaustive-deps
   const at = useRef<Pt>(start);
   const run = useRef({ pts: [start], t0: 0, walk: false, done: true });
+  // 0 while in play, rising to 1 when the player goes bankrupt: the piece spins and shrinks away
+  const vanish = useRef(player.isBankrupt ? 1 : 0);
 
   // A new position or a new resting spot starts a walk (tile by tile) or a slide
   useEffect(() => {
@@ -51,9 +53,13 @@ function Token({ player, index, offset, active }: { player: Player; index: numbe
     invalidate();
   }, [player.position, player.inJail, offset.dx, offset.dy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useFrame(() => {
+  // The layer only redraws on request, and nothing else changes on screen when a player goes bankrupt
+  useEffect(() => invalidate(), [player.isBankrupt, invalidate]);
+
+  useFrame((_, delta) => {
     const g = group.current;
     if (!g) return;
+    const dt = Math.min(delta, 0.05);
     const r = run.current;
     const t = now() - r.t0;
     const n = r.pts.length - 1;
@@ -80,7 +86,12 @@ function Token({ player, index, offset, active }: { player: Player; index: numbe
       if (since < 0.2) squash = Math.sin((Math.PI * since) / 0.2) * 0.16;
     }
     g.position.set(at.current.x, at.current.y, z);
-    g.scale.set(1 + squash * 0.5, 1 + squash * 0.5, 1 - squash);
+    if (player.isBankrupt && vanish.current < 1) vanish.current = Math.min(1, vanish.current + dt / 0.6);
+    const keep = 1 - vanish.current;
+    g.scale.set((1 + squash * 0.5) * keep, (1 + squash * 0.5) * keep, (1 - squash) * keep);
+    g.rotation.z = vanish.current * 7;
+    g.visible = keep > 0;
+    if (player.isBankrupt && vanish.current < 1) invalidate();
     if (shadow.current) {
       const k = 1 - Math.min(z / (HOP * 1.6), 0.6);
       shadow.current.scale.set(k, k, 1);

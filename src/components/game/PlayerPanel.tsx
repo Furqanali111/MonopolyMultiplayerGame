@@ -39,9 +39,9 @@ export const PlayerPanel: React.FC<PlayerPanelProps> = ({
       layout="position"
       aria-current={isCurrentPlayer ? 'true' : undefined}
       className={cn(
-        'relative border bg-card px-3 py-2.5 transition-colors duration-200',
+        'relative border bg-card px-3 py-2.5 transition-[color,background-color,border-color,opacity,filter] duration-500',
         isCurrentPlayer ? 'border-gold/60 bg-gold/[0.06]' : 'border-border',
-        player.isBankrupt && 'opacity-45'
+        player.isBankrupt && 'opacity-45 grayscale'
       )}
       style={{ borderRadius: 6 }}
     >
