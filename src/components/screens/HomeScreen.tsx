@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowRight, Bot, Users } from 'lucide-react';
 import { initializeSocket, connectSocket } from '@/services/socket';
 import { PLAYER_COLORS } from '@/game/constants';
 import { Pawn } from '@/components/game/kit';
 import { Dice } from '@/components/game/Dice';
+import { Fallback } from '@/components/game/Fallback';
+import { webglAvailable } from '@/lib/webgl';
 import Noise from '@/components/Noise';
 import { PRODUCT_DESCRIPTOR, PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
@@ -14,11 +16,27 @@ interface HomeScreenProps {
   onCreateRoom: () => void;
 }
 
+const PieceShowcase = lazy(() => import('@/components/game/PieceShowcase'));
+
 const NAMES = ['You', 'Alex', 'Jordan', 'Sam', 'Riley', 'Casey'];
 
 /** The table, set for a game: felt, dice, one chip per seat. Authored from the real components. */
 const TableArt: React.FC = () => {
   const reduce = useReducedMotion();
+  const flatPawns = (
+    <div className="absolute inset-x-0 bottom-[10%] flex justify-center gap-[3.2%]">
+      {PLAYER_COLORS.map((color, i) => (
+        <motion.div
+          key={color}
+          initial={reduce ? false : { y: 26, opacity: 0, rotate: -8 }}
+          animate={{ y: 0, opacity: 1, rotate: 0 }}
+          transition={{ delay: 0.25 + i * 0.07, type: 'spring', stiffness: 260, damping: 20 }}
+        >
+          <Pawn color={color} name={NAMES[i]} size={44} />
+        </motion.div>
+      ))}
+    </div>
+  );
   return (
     <div className="well board relative mx-auto aspect-[5/4] w-full max-w-[520px] overflow-hidden" style={{ borderRadius: 10 }} aria-hidden>
       <Noise opacity={0.14} fps={0} blendMode="soft-light" />
@@ -27,18 +45,17 @@ const TableArt: React.FC = () => {
           <Dice values={[4, 3]} isRolling={false} />
         </div>
       </div>
-      <div className="absolute inset-x-0 bottom-[10%] flex justify-center gap-[3.2%]">
-        {PLAYER_COLORS.map((color, i) => (
-          <motion.div
-            key={color}
-            initial={reduce ? false : { y: 26, opacity: 0, rotate: -8 }}
-            animate={{ y: 0, opacity: 1, rotate: 0 }}
-            transition={{ delay: 0.25 + i * 0.07, type: 'spring', stiffness: 260, damping: 20 }}
-          >
-            <Pawn color={color} name={NAMES[i]} size={44} />
-          </motion.div>
-        ))}
-      </div>
+      {!reduce && webglAvailable() ? (
+        <div className="absolute inset-x-0 bottom-[2%] h-[48%]">
+          <Fallback fallback={flatPawns}>
+            <Suspense fallback={null}>
+              <PieceShowcase colors={PLAYER_COLORS} />
+            </Suspense>
+          </Fallback>
+        </div>
+      ) : (
+        flatPawns
+      )}
       <div className="absolute inset-x-[8%] top-[10%] flex h-2 overflow-hidden rounded-[2px]">
         {['#8B5A3C', '#7CCBF0', '#E0609E', '#F28C38', '#DB4B4B', '#F2CF45', '#3FAE6A', '#3D6FD6'].map((c) => (
           <span key={c} className="flex-1" style={{ background: c }} />
