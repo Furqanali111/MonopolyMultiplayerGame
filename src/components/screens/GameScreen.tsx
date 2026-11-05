@@ -72,6 +72,8 @@ import { ChatPanel } from '@/components/game/ChatPanel';
 import { CardDisplay } from '@/components/game/CardDisplay';
 import { Pawn } from '@/components/game/kit';
 import { ChipFlights } from '@/components/game/ChipFlights';
+import { BoardFx, Fx } from '@/components/game/BoardFx';
+import { diffEvents } from '@/game/events';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRODUCT_NAME } from '@/lib/brand';
@@ -130,6 +132,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const seenCard = useRef(gameState.cardSeq ?? 0);
   const [muted, setMutedState] = useState(isMuted());
   const lastState = useRef(gameState);
+  const [fx, setFx] = useState<Fx | null>(null);
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
 
@@ -193,6 +196,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       const p = gameState.players.find((x) => x.id === id);
       return !!p && !p.isAI && (!isMultiplayer || p.id === currentUserId);
     });
+    // Flourishes wait for the pawn: it walks 0.11s a tile, a jump takes ~0.4s
+    for (const e of diffEvents(lastState.current, gameState)) {
+      const steps = e.type === 'move' ? (e.to - e.from + 40) % 40 : 0;
+      const walked = steps > 0 && steps <= 12;
+      if (e.type === 'move' && e.passedGo) setFx({ id: Date.now(), kind: 'go', delay: walked ? (40 - e.from) * 0.11 : 0.2 });
+      if (e.type === 'jail' && e.inJail) setFx({ id: Date.now(), kind: 'jail', delay: 0.4 });
+    }
     lastState.current = gameState;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState]);
@@ -448,12 +458,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
       <main className="mx-auto grid max-w-[1500px] gap-3 p-3 md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="mx-auto w-full" style={{ maxWidth: 'min(100%, calc(100dvh - 5.5rem))' }}>
-          <GameBoard gameState={gameState} onTileClick={setInspect}>
-            <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
-            <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
-              {latest}
-            </p>
-          </GameBoard>
+          <div className="relative">
+            <GameBoard gameState={gameState} onTileClick={setInspect}>
+              <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
+              <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
+                {latest}
+              </p>
+            </GameBoard>
+            <BoardFx fx={fx} onDone={() => setFx(null)} />
+          </div>
           <p className="mt-2 text-center text-[12px] text-muted-foreground md:hidden">Tap any tile to read its deed.</p>
         </div>
 

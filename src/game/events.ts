@@ -29,8 +29,9 @@ export function diffEvents(prev: GameState, next: GameState): GameEvent[] {
     const before = prev.players.find(x => x.id === p.id);
     if (!before) continue;
     if (p.position !== before.position) {
-      // Moving forward past 0 means they passed GO (card moves "back" never wrap forward)
-      events.push({ type: 'move', playerId: p.id, from: before.position, to: p.position, passedGo: p.position < before.position && !before.inJail });
+      // A lower position means they wrapped past GO, except Go To Jail and the Go Back 3 card (no forward card move is exactly 3 lower)
+      const passedGo = p.position < before.position && !before.inJail && !p.inJail && before.position - p.position !== 3;
+      events.push({ type: 'move', playerId: p.id, from: before.position, to: p.position, passedGo });
     }
     if (p.money !== before.money) events.push({ type: 'money', playerId: p.id, delta: p.money - before.money, balance: p.money });
     if (p.inJail !== before.inJail) events.push({ type: 'jail', playerId: p.id, inJail: p.inJail });

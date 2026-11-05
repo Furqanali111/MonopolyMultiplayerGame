@@ -24,6 +24,25 @@ describe('diffEvents', () => {
   });
 });
 
+describe('passedGo', () => {
+  const moved = (from: number, to: number, inJail = false) => {
+    const g = initializeGame(2, 'easy');
+    const at = (position: number, jailed: boolean) => ({ ...g, players: g.players.map((p, i) => (i ? p : { ...p, position, inJail: jailed })) });
+    return diffEvents(at(from, false), at(to, inJail)).find(e => e.type === 'move');
+  };
+
+  it('is true for a wrap, landing on GO, and a card that wraps a short way', () => {
+    expect(moved(38, 3)).toMatchObject({ passedGo: true });
+    expect(moved(36, 0)).toMatchObject({ passedGo: true });
+    expect(moved(7, 5)).toMatchObject({ passedGo: true }); // Chance to Reading Railroad
+  });
+
+  it('is false for Go Back 3 and Go To Jail', () => {
+    expect(moved(7, 4)).toMatchObject({ passedGo: false });
+    expect(moved(30, 10, true)).toMatchObject({ passedGo: false });
+  });
+});
+
 describe('card events', () => {
   it('reports a drawn card even though the card resolves in the same step', () => {
     const g = initializeGame(2, 'easy');
