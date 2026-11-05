@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   ArrowRight,
@@ -18,6 +18,7 @@ import { BOARD_TILES } from '@/game/constants';
 import { Pawn, PROPERTY_HEX } from '@/components/game/kit';
 import Noise from '@/components/Noise';
 import { Building } from '@/components/game/Building';
+import { CardDecks } from '@/components/game/CardDecks';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
 import { spring } from '@/lib/motion';
@@ -62,7 +63,7 @@ function orientationOf(position: number): Orientation {
 // Corners are 1.5 units wide, every other tile 1 unit: 12 units across.
 const TRACK = '1.5fr repeat(9, 1fr) 1.5fr';
 const unit = (i: number) => (i === 0 ? 0.75 : i === 10 ? 11.25 : i + 1);
-const centerOf = (position: number) => {
+export const centerOf = (position: number) => {
   const { col, row } = cellOf(position);
   return { x: (unit(col) / 12) * 100, y: (unit(row) / 12) * 100 };
 };
@@ -72,7 +73,7 @@ const centerOf = (position: number) => {
  * rest on the coloured band side (or toward the board's centre on corners and plain tiles)
  * instead of on top of the text.
  */
-function restingOffset(position: number): { dx: number; dy: number } {
+export function restingOffset(position: number): { dx: number; dy: number } {
   const u = 100 / 12;
   const orientation = orientationOf(position);
   const { col, row } = cellOf(position);
@@ -220,8 +221,15 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
   );
 });
 
+/** Tiles a pawn passes through. Dice and short card moves walk tile by tile; jail and long jumps slide straight there. */
+export function walkTrack(from: number, to: number, inJail: boolean, reduce: boolean): number[] {
+  const steps = (to - from + 40) % 40;
+  const walk = !reduce && steps > 0 && steps <= 12 && !(to === 10 && inJail);
+  return walk ? Array.from({ length: steps }, (_, i) => (from + i + 1) % 40) : [to];
+}
+
 /** Where each pawn sits so several on one tile never overlap. */
-function slotOffsets(players: Player[]): Map<string, { dx: number; dy: number }> {
+export function slotOffsets(players: Player[]): Map<string, { dx: number; dy: number }> {
   const byTile = new Map<number, Player[]>();
   players.forEach((p) => byTile.set(p.position, [...(byTile.get(p.position) ?? []), p]));
   const out = new Map<string, { dx: number; dy: number }>();
@@ -251,10 +259,7 @@ const PawnSprite: React.FC<{ player: Player; offset: { dx: number; dy: number };
     const to = player.position;
     if (from === to) return;
     last.current = to;
-    const steps = (to - from + 40) % 40;
-    // Dice and short card moves walk tile by tile; jail and long jumps slide straight there
-    const walk = !reduce && steps > 0 && steps <= 12 && !(to === 10 && player.inJail);
-    setTrack(walk ? Array.from({ length: steps }, (_, i) => (from + i + 1) % 40) : [to]);
+    setTrack(walkTrack(from, to, player.inJail, !!reduce));
   }, [player.position, player.inJail, reduce]);
 
   // Walking tile by tile passes through tile centres; only the resting tile uses the offset spot
@@ -281,6 +286,34 @@ const PawnSprite: React.FC<{ player: Player; offset: { dx: number; dy: number };
   );
 };
 
+// three.js is its own chunk, fetched only when a table opens
+const Tokens3D = lazy(() => import('@/components/game/Tokens3D'));
+
+let webgl: boolean | undefined;
+/** 3D needs WebGL. `?2d` in the address forces the flat pawns, handy for comparing and for slow machines. */
+function webglAvailable(): boolean {
+  if (webgl === undefined) {
+    try {
+      const canvas = document.createElement('canvas');
+      webgl = !!(canvas.getContext('webgl2') || canvas.getContext('webgl')) && !new URLSearchParams(window.location.search).has('2d');
+    } catch {
+      webgl = false;
+    }
+  }
+  return webgl;
+}
+
+/** If the 3D layer throws (lost context, chunk fails to load), show the flat pawns instead. */
+class Fallback extends React.Component<{ fallback: React.ReactNode; children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
 interface GameBoardProps {
   gameState: GameState;
   onTileClick?: (position: number) => void;
@@ -305,6 +338,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
   const live = players.filter((p) => !p.isBankrupt);
   const offsets = slotOffsets(live);
   const pawnSize = Math.max(16, Math.min(32, width * 0.036));
+  const reduce = useReducedMotion();
+  const use3d = !reduce && webglAvailable();
+  const pawns2d = (
+    <>
+      {live.map((p) => (
+        <PawnSprite
+          key={p.id}
+          player={p}
+          offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }}
+          size={pawnSize}
+          active={players[currentPlayerIndex]?.id === p.id}
+        />
+      ))}
+    </>
+  );
 
   return (
     <div
@@ -326,6 +374,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
       {/* The felt well: wordmark, supply, dice tray and the latest event live here */}
       <div className="well relative overflow-hidden" style={{ gridColumn: '2 / 11', gridRow: '2 / 11' }}>
         <Noise opacity={0.12} fps={0} blendMode="soft-light" />
+        <CardDecks seq={gameState.cardSeq ?? 0} last={gameState.lastCard?.type} />
         <div className="relative flex h-full w-full flex-col items-center justify-between p-[4%]">
           <div className="text-center">
             <div className="well-wordmark font-display text-[clamp(14px,3.6cqw,34px)] leading-none text-bone/80">{PRODUCT_NAME}</div>
@@ -346,15 +395,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
 
       {/* One layer for every pawn, so walking tile by tile is a single animation */}
       <div className="pointer-events-none absolute inset-0">
-        {live.map((p) => (
-          <PawnSprite
-            key={p.id}
-            player={p}
-            offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }}
-            size={pawnSize}
-            active={players[currentPlayerIndex]?.id === p.id}
-          />
-        ))}
+        {use3d ? (
+          <Fallback fallback={pawns2d}>
+            <Suspense fallback={pawns2d}>
+              <Tokens3D players={live} offsets={offsets} activeId={players[currentPlayerIndex]?.id} />
+            </Suspense>
+          </Fallback>
+        ) : (
+          pawns2d
+        )}
       </div>
     </div>
   );
