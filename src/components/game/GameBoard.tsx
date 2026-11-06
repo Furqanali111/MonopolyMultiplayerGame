@@ -55,6 +55,16 @@ function shortName(name: string): string {
   return ABBREVIATIONS.reduce((n, [re, short]) => n.replace(re, short), name);
 }
 
+/**
+ * Phone boards give a tile about 29px, so names are hand-shortened to 6 characters or fewer.
+ * Tiles without an entry (Chance, Chest, corners) are told apart by their icons.
+ */
+export const PHONE_NAMES: Record<number, string> = {
+  1: 'Medit.', 3: 'Baltic', 5: 'Read.', 6: 'Orient', 8: 'Verm.', 9: 'Conn.', 11: 'St.Ch.', 12: 'Elec.', 13: 'States',
+  14: 'Virg.', 15: 'Pa.RR', 16: 'St.Ja.', 18: 'Tenn.', 19: 'N.York', 21: 'Kent.', 23: 'Indi.', 24: 'Illi.', 25: 'B&O',
+  26: 'Atl.', 27: 'Vent.', 28: 'Water', 29: 'Marv.', 31: 'Pac.', 32: 'N.Car.', 34: 'Penn.', 35: 'Short', 37: 'Park', 39: 'Board.',
+};
+
 function orientationOf(position: number): Orientation {
   if (position % 10 === 0) return 'corner';
   if (position < 10) return 'bottom';
@@ -154,7 +164,7 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
       onClick={onClick}
       aria-label={`${tile.name}${property ? `, $${property.price}` : ''}${owner ? `, owned by ${owner.name}` : ''}${houses ? (houses === 5 ? ', hotel' : `, ${houses} house${houses > 1 ? 's' : ''}`) : ''}`}
       className={cn(
-        'group relative min-h-0 min-w-0 overflow-hidden border border-border/80 bg-card text-foreground transition-colors duration-150 hover:bg-raised focus-visible:z-10',
+        'board-tile group relative min-h-0 min-w-0 overflow-hidden border border-border/80 bg-card text-foreground transition-colors duration-150 hover:bg-raised focus-visible:z-10',
         owned?.isMortgaged && 'opacity-50'
       )}
       style={{
@@ -166,7 +176,8 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
       {hasBand && !isCorner && (
         <span
           className={cn('absolute flex items-center justify-center gap-[2px]', BAND[orientation])}
-          style={{ background: PROPERTY_HEX[group!] }}
+          // Gloss: a highlight at the top, a little shade at the bottom, over the flat property colour
+          style={{ background: `linear-gradient(180deg, rgba(255,255,255,0.3), rgba(255,255,255,0) 55%, rgba(0,0,0,0.2)), ${PROPERTY_HEX[group!]}` }}
         >
           {houses > 0 && <Building houses={houses} animate={settled.current} />}
         </span>
@@ -192,6 +203,12 @@ const BoardTile = memo(function BoardTile({ tile, position, owned, owner, onClic
         <span className={cn('tile-name font-medium', isCorner && 'font-semibold')} style={isCorner ? { fontSize: 'clamp(7px,1.6cqw,14px)' } : undefined}>
           {label}
         </span>
+        {PHONE_NAMES[position] && (
+          // Shown only on small boards (see .tile-short); the rows along the top and bottom read sideways to fit
+          <span className={cn('tile-short', (orientation === 'top' || orientation === 'bottom') && 'tile-short-v')} aria-hidden>
+            {PHONE_NAMES[position]}
+          </span>
+        )}
         {property && (
           <span className="tile-price mt-[2%] tabular-nums text-muted-foreground">${property.price}</span>
         )}
@@ -358,6 +375,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
         {/* The felt well: wordmark, supply, dice tray and the latest event live here */}
         <div className="well relative overflow-hidden" style={{ gridColumn: '2 / 11', gridRow: '2 / 11' }}>
           <Noise opacity={0.12} fps={0} blendMode="soft-light" />
+          {/* Brass inlay rings around the dice tray: gives the empty middle a centre of gravity */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 grid place-items-center">
+            <div className="aspect-square w-[64%] rounded-full border border-gold/[0.16] p-[5%]">
+              <div className="h-full w-full rounded-full border border-gold/[0.09]" />
+            </div>
+          </div>
           <CardDecks seq={gameState.cardSeq ?? 0} last={gameState.lastCard?.type} text={gameState.lastCard?.text} />
           <div className="relative flex h-full w-full flex-col items-center justify-between p-[4%]">
             <div className="text-center">

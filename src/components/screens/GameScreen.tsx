@@ -74,6 +74,8 @@ import { DeedDialog } from '@/components/game/DeedDialog';
 import { GameLog } from '@/components/game/GameLog';
 import { ChatPanel } from '@/components/game/ChatPanel';
 import { MatchClock } from '@/components/game/MatchClock';
+import { TilePeek } from '@/components/game/TilePeek';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { EMOTES } from '@/game/types';
 import { CardDisplay } from '@/components/game/CardDisplay';
 import { Pawn } from '@/components/game/kit';
@@ -133,6 +135,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [showTrade, setShowTrade] = useState(false);
   const [tradeSeed, setTradeSeed] = useState<{ partnerId: string; requestedProperty: number } | null>(null);
   const [inspect, setInspect] = useState<number | null>(null);
+  // Phones: a tap peeks at the tile first (names are too small to print); a second tap on the same tile dismisses it
+  const isMobile = useIsMobile();
+  const [peek, setPeek] = useState<number | null>(null);
+  const onTile = (position: number) => (isMobile ? setPeek((p) => (p === position ? null : position)) : setInspect(position));
   const [card, setCard] = useState<CardData | null>(null);
   const [deadline, setDeadline] = useState<{ playerId: string; at: number; total: number } | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
@@ -454,7 +460,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const tabs: [string, string][] = [['players', 'Players'], ['log', 'Log'], ...(isMultiplayer ? [['chat', 'Chat'] as [string, string]] : [])];
 
   return (
-    <div className="min-h-dvh bg-background" onPointerDownCapture={(e) => (e.target as HTMLElement).closest?.('button') && play('tap')}>
+    // overflow-x-clip: the 3D piece layer reaches past the board edges and must not widen the page on phones
+    <div className="min-h-dvh overflow-x-clip bg-background" onPointerDownCapture={(e) => (e.target as HTMLElement).closest?.('button') && play('tap')}>
       <header className="sticky top-0 z-30 border-b border-border bg-background">
         <div className="mx-auto flex h-12 max-w-[1500px] items-center gap-2 px-3 md:px-4">
           {onBackToMenu && (
@@ -480,16 +487,29 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1500px] gap-3 p-3 md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+      <main className="mx-auto grid max-w-[1500px] gap-3 p-3 grid-cols-[minmax(0,1fr)] md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="mx-auto w-full" style={{ maxWidth: 'min(100%, calc(100dvh - 5.5rem))' }}>
           {/* The effects live inside the board so they lean with it */}
-          <GameBoard gameState={gameState} onTileClick={setInspect} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
+          <GameBoard gameState={gameState} onTileClick={onTile} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
             <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
+            {peek !== null && (
+              // Floats above the event line so the dice and the decks do not move
+              <div className="absolute inset-x-0 bottom-[11%] z-10 flex justify-center">
+                <TilePeek
+                  position={peek}
+                  gameState={gameState}
+                  onOpen={() => {
+                    setInspect(peek);
+                    setPeek(null);
+                  }}
+                />
+              </div>
+            )}
             <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
               {latest}
             </p>
           </GameBoard>
-          <p className="mt-2 text-center text-[12px] text-muted-foreground md:hidden">Tap any tile to read its deed.</p>
+          <p className="mt-2 text-center text-[12px] text-muted-foreground md:hidden">Tap any tile to see what it is.</p>
         </div>
 
         <aside className="flex min-h-0 flex-col gap-3 lg:sticky lg:top-[3.75rem] lg:max-h-[calc(100dvh-4.5rem)]">

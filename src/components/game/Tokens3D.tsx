@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SHAPES } from '@/components/game/tokenShapes';
 import { IsoRig } from '@/components/game/IsoRig';
+import { Studio, lacquer, softShadow } from '@/components/game/Studio';
 import type { Player } from '@/game/types';
 import { centerOf, restingOffset, walkTrack } from '@/components/game/GameBoard';
 import { CANVAS_EXTEND, VIEW_TILT_DEG } from '@/lib/boardTilt';
@@ -95,18 +96,19 @@ function Token({ player, index, offset, active }: { player: Player; index: numbe
     if (shadow.current) {
       const k = 1 - Math.min(z / (HOP * 1.6), 0.6);
       shadow.current.scale.set(k, k, 1);
-      (shadow.current.material as THREE.MeshBasicMaterial).opacity = 0.32 * k;
+      (shadow.current.material as THREE.MeshBasicMaterial).opacity = 0.6 * k;
     }
     if (!r.done || (r.done && n > 0 && t - (r.walk ? n * STEP_SECONDS : SLIDE_SECONDS) < 0.25)) invalidate();
   });
 
-  const material = <meshStandardMaterial color={player.color} roughness={0.38} metalness={0.15} />;
+  const material = lacquer(player.color);
 
   return (
     <group ref={group} position={[start.x, start.y, 0]}>
-      <mesh ref={shadow} position={[0, 0, 0.02]}>
-        <circleGeometry args={[2.7, 24]} />
-        <meshBasicMaterial color="#000" transparent opacity={0.32} depthWrite={false} />
+      {/* Soft contact shadow, pushed away from the key light (which sits at the lower left) */}
+      <mesh ref={shadow} position={[0.9, 0.7, 0.02]}>
+        <planeGeometry args={[8, 8]} />
+        <meshBasicMaterial map={softShadow()} transparent opacity={0.6} depthWrite={false} />
       </mesh>
       {active && (
         <mesh position={[0, 0, 0.03]}>
@@ -142,8 +144,7 @@ const Tokens3D: React.FC<Tokens3DProps> = ({ players, offsets, activeId, onReady
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
     >
       <IsoRig units={CANVAS_UNITS} />
-      <ambientLight intensity={1.1} />
-      <directionalLight position={[-25, -20, 50]} intensity={2.4} />
+      <Studio />
       {players.map((p, i) => (
         <Token key={p.id} player={p} index={i} offset={offsets.get(p.id) ?? { dx: 0, dy: 0 }} active={activeId === p.id} />
       ))}

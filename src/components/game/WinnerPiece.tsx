@@ -3,6 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SHAPES } from '@/components/game/tokenShapes';
 import { IsoRig } from '@/components/game/IsoRig';
+import { Studio, lacquer } from '@/components/game/Studio';
 
 const GOLD = '#E8B84A';
 
@@ -26,7 +27,7 @@ function Piece({ index, color }: { index: number; color: string }) {
         <ringGeometry args={[3.4, 4.2, 48]} />
         <meshBasicMaterial color={GOLD} transparent opacity={0.9} />
       </mesh>
-      <group ref={group}>{SHAPES[index % SHAPES.length](<meshStandardMaterial color={color} roughness={0.38} metalness={0.15} />)}</group>
+      <group ref={group}>{SHAPES[index % SHAPES.length](lacquer(color))}</group>
     </>
   );
 }
@@ -34,8 +35,7 @@ function Piece({ index, color }: { index: number; color: string }) {
 const WinnerPiece: React.FC<{ index: number; color: string }> = ({ index, color }) => (
   <Canvas aria-hidden orthographic dpr={[1, 2]} gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }} style={{ position: 'absolute', inset: 0 }}>
     <IsoRig units={11} lookAtZ={3} />
-    <ambientLight intensity={1.1} />
-    <directionalLight position={[-25, -20, 50]} intensity={2.4} />
+    <Studio />
     <Piece index={index} color={color} />
   </Canvas>
 );
