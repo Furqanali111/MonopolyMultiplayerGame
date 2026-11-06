@@ -30,13 +30,15 @@ import {
     leaveJail,
     endTurn,
     applyWinCondition,
+    applyLateFine,
+    endByWealth,
     canBuyProperty,
     canBuildHouse,
     canSellHouse,
     canMortgage,
     canUnmortgage,
 } from '../../src/game/engine';
-import { DEFAULT_RULES, HouseRules, sanitizeRules } from '../../src/game/types';
+import { DEFAULT_RULES, EMOTES, HouseRules, QUICK_GAME, sanitizeRules } from '../../src/game/types';
 import { addEventsToStats, finalStandings } from '../../src/game/stats';
 import { diffEvents } from '../../src/game/events';
 import { autoStep, whoMustAct } from '../../src/game/autopilot';
@@ -122,7 +124,14 @@ function scheduleAuto(room: any) {
     const seat = room.players.find((p: any) => p.id === actor.id);
     const away = !actor.isAI && !(seat && seat.isConnected);
     const stoodIn = room.autoplay?.has(actor.id);
-    const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? BOT_MS * 2 : TURN_MS;
+    const quick = !!room.gameState.rules?.quickGame;
+    const humanMs = quick ? QUICK_GAME.turnSeconds * 1000 : TURN_MS;
+    const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? BOT_MS * 2 : humanMs;
+    // Fined on a timeout, and again at the start of each later turn while the table plays for them.
+    // Not during bankruptcy: a fine there could tip a player over.
+    const gs = room.gameState;
+    const turnStart = gs.phase === 'playing' && (gs.turnPhase === 'roll' || gs.turnPhase === 'injail') && actor.doublesCount === 0;
+    const fine = quick && !actor.isAI && !away && gs.phase !== 'bankruptcy' && (!stoodIn || turnStart) ? QUICK_GAME.fine : 0;
     if (!delay) return; // timer disabled and a connected human is acting
 
     if (!actor.isAI && !stoodIn && !away) {
@@ -132,11 +141,12 @@ function scheduleAuto(room: any) {
     const version = room.version;
     const act = () => {
         if (room.version !== version || room.state !== 'playing') return; // something happened meanwhile
-        const next = autoStep(room.gameState);
+        const fined = fine ? applyLateFine(room.gameState, actor.id, fine) : room.gameState;
+        const next = autoStep(fined);
         if (!next) return;
         if (!actor.isAI) {
             (room.autoplay ??= new Set()).add(actor.id);
-            io.to(room.code).emit('game:autoplayed', { playerId: actor.id });
+            io.to(room.code).emit('game:autoplayed', { playerId: actor.id, fine });
         }
         publish(room, next);
     };
@@ -148,6 +158,16 @@ function scheduleAuto(room: any) {
         io.to(room.code).emit('game:rolling', { playerId: actor.id });
         autoTimers.set(room.code, setTimeout(act, ROLL_MS));
     }, rolls ? delay - ROLL_MS : delay));
+}
+
+// Quick game clock: when it runs out the richest player wins.
+// The endsAt check makes a stale timer (rematch, restart) harmless, so nothing needs clearing.
+function armMatchTimer(room: any) {
+    const endsAt = room.gameState?.endsAt;
+    if (!endsAt) return;
+    setTimeout(() => {
+        if (room.state === 'playing' && room.gameState?.endsAt === endsAt) publish(room, endByWealth(room.gameState));
+    }, Math.max(0, endsAt - Date.now())).unref();
 }
 
 const humans = (room: any) => room.players.filter((p: any) => !p.isBot);
@@ -476,13 +496,15 @@ io.on('connection', (socket) => {
         room.state = 'playing';
 
         // Initialize game state from room players
-        const gameState = initializeMultiplayerGame(room.players, room.rules);
+        const gameState: any = initializeMultiplayerGame(room.players, room.rules);
+        if (room.rules?.quickGame) gameState.endsAt = Date.now() + QUICK_GAME.minutes * 60_000;
         room.gameState = gameState;
         room.version = 0;
         room.autoplay = new Set();
         room.stats = {};
 
         io.to(session.roomCode).emit('game:started', { gameState });
+        armMatchTimer(room);
         scheduleAuto(room);
 
         console.log(`🎮 Game started in room ${session.roomCode} with ${room.players.length} players`);
@@ -500,6 +522,16 @@ io.on('connection', (socket) => {
         const message = { from: session.userId, username: session.username, text: clean, at: now };
         room.chat = [...(room.chat || []), message].slice(-50);
         io.to(room.code).emit('chat:message', message);
+    });
+
+    // Emotes: a fixed set of reactions shown to the whole table, rate-limited like chat
+    socket.on('emote:send', ({ emoji }) => {
+        const session = sessions.get(socket.id);
+        const room = session?.roomCode && rooms.get(session.roomCode);
+        const now = Date.now();
+        if (!room || !EMOTES.includes(emoji) || now - (session.lastEmote || 0) < 1000) return;
+        session.lastEmote = now;
+        io.to(room.code).emit('emote:show', { from: session.userId, username: session.username, emoji });
     });
 
     // After a game: back to the lobby with the same people (and bots), ready flags cleared
@@ -748,7 +780,10 @@ function loadState() {
             // Everyone gets the normal grace period to come back
             user.timer = setTimeout(() => dropUser(user), GRACE_MS);
         }
-        rooms.forEach((room) => scheduleAuto(room));
+        rooms.forEach((room) => {
+            if (room.state === 'playing') armMatchTimer(room);
+            scheduleAuto(room);
+        });
         console.log(`♻️  Restored ${rooms.size} room(s) and ${users.size} player(s)`);
     } catch (err) {
         console.error('⚠️ Could not load saved state (starting empty):', err);

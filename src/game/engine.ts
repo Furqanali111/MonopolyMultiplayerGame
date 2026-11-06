@@ -1579,3 +1579,25 @@ export function applyWinCondition(state: GameState): GameState {
   const winner = checkWinCondition(state);
   return winner === null || state.phase === 'gameover' ? state : { ...state, phase: 'gameover', winner };
 }
+
+/** Late fine: money goes to the bank, never below zero. */
+export function applyLateFine(state: GameState, playerId: PlayerId, amount: number): GameState {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p || p.isBankrupt) return state;
+  const fine = Math.min(amount, p.money);
+  return {
+    ...state,
+    players: state.players.map(x => (x.id === playerId ? { ...x, money: x.money - fine } : x)),
+    gameLog: [...state.gameLog, `${p.name} was late and paid a $${fine} fine`],
+  };
+}
+
+/** Time is up: the richest player (net worth) wins. */
+export function endByWealth(state: GameState): GameState {
+  if (state.phase === 'gameover') return state;
+  const [top] = state.players
+    .filter(p => !p.isBankrupt)
+    .map(p => ({ id: p.id, worth: calculatePlayerNetWorth(state, p.id) }))
+    .sort((a, b) => b.worth - a.worth);
+  return { ...state, phase: 'gameover', winner: top?.id ?? null, gameLog: [...state.gameLog, 'Time is up! The richest player wins'] };
+}

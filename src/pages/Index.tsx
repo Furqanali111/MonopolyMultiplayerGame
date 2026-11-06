@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { resumeSession, leaveRoom, Room } from '@/services/socket';
+import { resumeSession, leaveRoom, Room, type FinalStanding } from '@/services/socket';
 import { AIDifficulty, DEFAULT_RULES, GameState, HouseRules } from '@/game/types';
 import { HomeScreen } from '@/components/screens/HomeScreen';
 import { SetupScreen } from '@/components/screens/SetupScreen';
@@ -12,10 +12,14 @@ import { screenIn } from '@/lib/motion';
 
 type Screen = 'home' | 'setup' | 'game' | 'gameover' | 'login' | 'lobby';
 
+// Invite link: /?room=CODE. The lobby reads it once and clears it from the address bar.
+const inviteCode = () => new URLSearchParams(window.location.search).get('room');
+
 const Index = () => {
-  const [screen, setScreen] = useState<Screen>('home');
+  const [screen, setScreen] = useState<Screen>(() => (inviteCode() ? 'login' : 'home'));
   const [currentUser, setCurrentUser] = useState<{ id: string, username: string } | null>(null);
-  const [isMultiplayer, setIsMultiplayer] = useState(false);
+  const [isMultiplayer, setIsMultiplayer] = useState(() => !!inviteCode());
+  const [standings, setStandings] = useState<FinalStanding[] | undefined>(undefined);
   const [onlineGameState, setOnlineGameState] = useState<any>(null);
   const [gameConfig, setGameConfig] = useState({
     aiCount: 2,
@@ -30,7 +34,11 @@ const Index = () => {
     resumeSession().then((res) => {
       if (!res?.userId || !res.username) return;
       setCurrentUser({ id: res.userId, username: res.username });
-      if (!res.room) return;
+      if (!res.room) {
+        if (inviteCode()) setScreen('lobby'); // already signed in: go straight to joining
+        return;
+      }
+      window.history.replaceState(null, '', window.location.pathname); // already seated: an old invite must not fire later
       setIsMultiplayer(true);
       if (res.room.state === 'playing' && res.room.gameState) {
         setOnlineGameState(res.room.gameState);
@@ -72,8 +80,9 @@ const Index = () => {
     setScreen('game');
   };
 
-  const handleGameOver = (state: GameState) => {
+  const handleGameOver = (state: GameState, final?: FinalStanding[]) => {
     setFinalGameState(state);
+    setStandings(final);
     setScreen('gameover');
   };
 
@@ -119,6 +128,7 @@ const Index = () => {
         <LobbyScreen
           currentUser={currentUser}
           initialRoom={resumedRoom}
+          joinCode={inviteCode()}
           onBack={() => setScreen('home')}
           onGameStarted={handleOnlineGameStarted}
         />
@@ -147,6 +157,7 @@ const Index = () => {
       {screen === 'gameover' && finalGameState && (
         <GameOverScreen
           gameState={finalGameState}
+          standings={standings}
           winner={finalGameState.players.find(p => p.id === finalGameState.winner)!}
           onPlayAgain={handlePlayAgain}
           onMainMenu={handleMainMenu}

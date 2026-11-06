@@ -1,6 +1,9 @@
 import { io, Socket } from 'socket.io-client';
 import { GameState, TradeOffer, HouseRules } from '@/game/types';
 import type { GameEvent } from '@/game/events';
+import type { finalStandings } from '@/game/stats';
+
+export type FinalStanding = ReturnType<typeof finalStandings>[number];
 
 // Socket.IO client instance
 let socket: Socket | null = null;
@@ -222,6 +225,12 @@ export const onChatMessage = (cb: (m: ChatMessage) => void): void => {
 export const onChatHistory = (cb: (m: ChatMessage[]) => void): void => {
     socket?.on('chat:history', cb);
 };
+export const sendEmote = (emoji: string): void => {
+    socket?.emit('emote:send', { emoji });
+};
+export const onEmote = (cb: (e: { from: string; username: string; emoji: string }) => void): void => {
+    socket?.on('emote:show', cb);
+};
 export const requestRematch = (): void => {
     socket?.emit('room:rematch', {});
 };
@@ -441,14 +450,14 @@ export const onGameDeadline = (callback: (data: { playerId: string; at: number }
 export const onGameRolling = (callback: (data: { playerId: string }) => void): void => {
     socket?.on('game:rolling', callback);
 };
-export const onGameAutoplayed = (callback: (data: { playerId: string }) => void): void => {
+export const onGameAutoplayed = (callback: (data: { playerId: string; fine?: number }) => void): void => {
     socket?.on('game:autoplayed', callback);
 };
 
 /**
  * Listen for game ended
  */
-export const onGameEnded = (callback: (data: { winner: any; finalState: GameState }) => void): void => {
+export const onGameEnded = (callback: (data: { winner: any; finalState: GameState; standings: FinalStanding[] }) => void): void => {
     socket?.on('game:ended', callback);
 };
 

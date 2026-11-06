@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Bot, Check, Copy, Crown, Loader2, LogOut, Play, Plus, WifiOff, X } from 'lucide-react';
+import { Bot, Check, Copy, Crown, Link2, Loader2, LogOut, Play, Plus, Send, WifiOff, X } from 'lucide-react';
+import { QUICK_GAME } from '@/game/types';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,11 +34,14 @@ interface LobbyScreenProps {
   onBack: () => void;
   onGameStarted: (gameState: any) => void;
   initialRoom?: Room | null;
+  /** Room code from an invite link (?room=CODE) */
+  joinCode?: string | null;
 }
 
 const MAX_SEATS = 6;
+const inviteUrl = (code: string) => `${window.location.origin}/?room=${code}`;
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, onGameStarted: handleGameStartedProp, initialRoom = null }) => {
+export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, onGameStarted: handleGameStartedProp, initialRoom = null, joinCode = null }) => {
   const [room, setRoom] = useState<Room | null>(initialRoom);
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -119,6 +123,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
     }
   };
 
+  // Opened from an invite link: take the seat without typing the code. Runs once.
+  const autoJoined = useRef(false);
+  useEffect(() => {
+    if (autoJoined.current || room || !joinCode) return;
+    autoJoined.current = true;
+    window.history.replaceState(null, '', window.location.pathname);
+    joinRoom(joinCode.toUpperCase())
+      .then((res) => (res.success && res.room ? setRoom(res.room) : toast.error(res.error || 'That invite is no longer valid.')))
+      .catch(() => toast.error("Couldn't reach the server. Try again."));
+  }, [joinCode, room]);
+
   const handleLeaveRoom = async () => {
     try {
       await leaveRoom();
@@ -126,6 +141,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
     } catch {
       toast.error('Could not leave the room.');
     }
+  };
+
+  const copyInvite = () => {
+    if (!room?.code) return;
+    navigator.clipboard.writeText(inviteUrl(room.code));
+    toast.success('Invite link copied');
   };
 
   const copyRoomCode = () => {
@@ -195,7 +216,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
                 {isCopied ? <Check /> : <Copy />}
               </Button>
             </div>
-            <p className="mt-1.5 text-[13px] text-muted-foreground">Share this code. Friends join from the lobby screen.</p>
+            <p className="mt-1.5 text-[13px] text-muted-foreground">Share the code, or send the invite link: it joins them straight to this room.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={copyInvite}>
+                <Link2 /> Copy invite link
+              </Button>
+              <Button variant="secondary" size="sm" asChild>
+                <a href={`https://wa.me/?text=${encodeURIComponent(`Join my Monopoly game: ${inviteUrl(room.code)}`)}`} target="_blank" rel="noreferrer">
+                  <Send /> WhatsApp
+                </a>
+              </Button>
+            </div>
           </div>
 
           <fieldset disabled={!isHost} className="space-y-3 disabled:opacity-100">
@@ -209,7 +240,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
                 min={500}
                 max={10000}
                 value={room.rules?.startingMoney ?? 1500}
-                onChange={(e) => setRules({ startingMoney: parseInt(e.target.value, 10) || 1500, freeParkingPot: !!room.rules?.freeParkingPot })}
+                onChange={(e) => setRules({ ...room.rules, startingMoney: parseInt(e.target.value, 10) || 1500, freeParkingPot: !!room.rules?.freeParkingPot })}
                 className="h-10 w-28 text-right disabled:opacity-100"
               />
             </label>
@@ -217,12 +248,26 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
               <input
                 type="checkbox"
                 checked={!!room.rules?.freeParkingPot}
-                onChange={(e) => setRules({ startingMoney: room.rules?.startingMoney ?? 1500, freeParkingPot: e.target.checked })}
+                onChange={(e) => setRules({ ...room.rules, startingMoney: room.rules?.startingMoney ?? 1500, freeParkingPot: e.target.checked })}
                 className="mt-1 h-4 w-4 accent-[hsl(var(--gold))]"
               />
               <span>
                 Free Parking pot
                 <span className="block text-[12px] text-muted-foreground">Taxes go to the middle. Landing on Free Parking collects them.</span>
+              </span>
+            </label>
+            <label className={cn('flex items-start gap-3 text-[14px]', isHost && 'cursor-pointer')}>
+              <input
+                type="checkbox"
+                checked={!!room.rules?.quickGame}
+                onChange={(e) => setRules({ startingMoney: room.rules?.startingMoney ?? 1500, freeParkingPot: !!room.rules?.freeParkingPot, quickGame: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-[hsl(var(--gold))]"
+              />
+              <span>
+                Quick game
+                <span className="block text-[12px] text-muted-foreground">
+                  {QUICK_GAME.minutes} minutes, the richest player wins. {QUICK_GAME.turnSeconds} seconds per move, ${QUICK_GAME.fine} fine if you are late.
+                </span>
               </span>
             </label>
           </fieldset>

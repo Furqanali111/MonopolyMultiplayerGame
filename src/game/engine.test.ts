@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initializeGame, rollTurn, rollForJailTurn, leaveJail, endTurn, buyProperty, applyWinCondition } from './engine';
+import { initializeGame, rollTurn, rollForJailTurn, leaveJail, endTurn, buyProperty, applyWinCondition, applyLateFine, endByWealth } from './engine';
 
 const newGame = () => initializeGame(2, 'easy');
 const at = (s: ReturnType<typeof newGame>, position: number) => ({
@@ -143,5 +143,22 @@ describe('house rules', () => {
   it('without the rule nothing is pooled', () => {
     const taxed = rollTurn(at(newGame(), 0), [1, 3]);
     expect(taxed.freeParkingPot).toBe(0);
+  });
+});
+
+describe('quick game helpers', () => {
+  it('fines the player but never below zero', () => {
+    const g = newGame();
+    expect(applyLateFine(g, g.players[0].id, 50).players[0].money).toBe(g.players[0].money - 50);
+    g.players[0].money = 20;
+    expect(applyLateFine(g, g.players[0].id, 50).players[0].money).toBe(0);
+  });
+
+  it('time up: richest wins', () => {
+    const g = newGame();
+    g.players[1].money += 500;
+    const s = endByWealth(g);
+    expect(s.phase).toBe('gameover');
+    expect(s.winner).toBe(g.players[1].id);
   });
 });
