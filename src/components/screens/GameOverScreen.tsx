@@ -99,14 +99,14 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, winne
     const file = new File([blob], 'monopoly-result.png', { type: 'image/png' });
     try {
       if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], text: `${winner.name} won our game!` });
-    } catch {
-      return; // share sheet dismissed
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return; // share sheet dismissed; any other failure falls back to a download
     }
     const a = document.createElement('a'); // no share sheet (desktop): download it instead
     a.href = URL.createObjectURL(blob);
     a.download = file.name;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000); // some browsers start the download after click returns
   };
 
   useEffect(() => {
