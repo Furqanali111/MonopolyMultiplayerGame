@@ -59,7 +59,7 @@ function shortName(name: string): string {
  * Phone boards give a tile about 29px, so names are hand-shortened to 6 characters or fewer.
  * Tiles without an entry (Chance, Chest, corners) are told apart by their icons.
  */
-const PHONE_NAMES: Record<number, string> = {
+export const PHONE_NAMES: Record<number, string> = {
   1: 'Medit.', 3: 'Baltic', 5: 'Read.', 6: 'Orient', 8: 'Verm.', 9: 'Conn.', 11: 'St.Ch.', 12: 'Elec.', 13: 'States',
   14: 'Virg.', 15: 'Pa.RR', 16: 'St.Ja.', 18: 'Tenn.', 19: 'N.York', 21: 'Kent.', 23: 'Indi.', 24: 'Illi.', 25: 'B&O',
   26: 'Atl.', 27: 'Vent.', 28: 'Water', 29: 'Marv.', 31: 'Pac.', 32: 'N.Car.', 34: 'Penn.', 35: 'Short', 37: 'Park', 39: 'Board.',

@@ -15,6 +15,7 @@ export const Studio: React.FC<{ lights?: boolean; reflections?: number }> = ({ l
     const pmrem = new THREE.PMREMGenerator(gl);
     const room = new RoomEnvironment();
     const target = pmrem.fromScene(room, 0.04);
+    room.dispose(); // the map is baked; the room's geometry would otherwise stay on the GPU
     scene.environment = target.texture;
     scene.environmentIntensity = reflections;
     invalidate();

@@ -492,20 +492,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           {/* The effects live inside the board so they lean with it */}
           <GameBoard gameState={gameState} onTileClick={onTile} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
             <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
-            {peek !== null ? (
-              <TilePeek
-                position={peek}
-                gameState={gameState}
-                onOpen={() => {
-                  setInspect(peek);
-                  setPeek(null);
-                }}
-              />
-            ) : (
-              <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
-                {latest}
-              </p>
+            {peek !== null && (
+              // Floats above the event line so the dice and the decks do not move
+              <div className="absolute inset-x-0 bottom-[11%] z-10 flex justify-center">
+                <TilePeek
+                  position={peek}
+                  gameState={gameState}
+                  onOpen={() => {
+                    setInspect(peek);
+                    setPeek(null);
+                  }}
+                />
+              </div>
             )}
+            <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
+              {latest}
+            </p>
           </GameBoard>
           <p className="mt-2 text-center text-[12px] text-muted-foreground md:hidden">Tap any tile to see what it is.</p>
         </div>
