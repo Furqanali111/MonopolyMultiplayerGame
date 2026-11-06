@@ -5,9 +5,12 @@ export type PlayerId = string;
 export interface HouseRules {
   startingMoney: number;
   freeParkingPot: boolean; // taxes go to a pot that Free Parking pays out
+  quickGame?: boolean; // online: 20 minute match, richest wins, 40s per decision, $50 fine when late
 }
 
 export const DEFAULT_RULES: HouseRules = { startingMoney: 1500, freeParkingPot: false };
+
+export const QUICK_GAME = { minutes: 20, turnSeconds: 40, fine: 50 };
 
 /** Clamp untrusted rule input from a client. */
 export function sanitizeRules(input: Partial<HouseRules> | undefined): HouseRules {
@@ -15,6 +18,7 @@ export function sanitizeRules(input: Partial<HouseRules> | undefined): HouseRule
   return {
     startingMoney: Number.isFinite(money) ? Math.min(10000, Math.max(500, money)) : DEFAULT_RULES.startingMoney,
     freeParkingPot: !!input?.freeParkingPot,
+    quickGame: !!input?.quickGame,
   };
 }
 
@@ -90,6 +94,7 @@ export interface GameState {
   trade: TradeOffer | null;
   bankruptcyState: BankruptcyState | null;
   winner: PlayerId | null;
+  endsAt?: number; // quick game: epoch ms when the richest player wins
   preAuctionPlayerIndex?: number;
   gameLog: string[];
   rules?: HouseRules;

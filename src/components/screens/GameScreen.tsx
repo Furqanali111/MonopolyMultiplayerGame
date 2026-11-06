@@ -33,6 +33,10 @@ import {
   onGameDeadline,
   onGameRolling,
   onGameAutoplayed,
+  onEmote,
+  sendEmote,
+  onGameEnded,
+  type FinalStanding,
   onChatMessage,
   onChatHistory,
   removeListener,
@@ -69,6 +73,9 @@ import { BankruptcyModal } from '@/components/game/BankruptcyModal';
 import { DeedDialog } from '@/components/game/DeedDialog';
 import { GameLog } from '@/components/game/GameLog';
 import { ChatPanel } from '@/components/game/ChatPanel';
+import { MatchClock } from '@/components/game/MatchClock';
+
+const EMOTES = ['👏', '😂', '😡', '😎', '🤝', '💸'];
 import { CardDisplay } from '@/components/game/CardDisplay';
 import { Pawn } from '@/components/game/kit';
 import { ChipFlights } from '@/components/game/ChipFlights';
@@ -87,7 +94,7 @@ interface GameScreenProps {
   aiCount: number;
   difficulty: AIDifficulty;
   rules?: HouseRules;
-  onGameOver: (state: GameState) => void;
+  onGameOver: (state: GameState, standings?: FinalStanding[]) => void;
   onBackToMenu?: () => void;
   isMultiplayer?: boolean;
   onlineGameState?: any;
@@ -131,6 +138,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [deadline, setDeadline] = useState<{ playerId: string; at: number; total: number } | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const seenCard = useRef(gameState.cardSeq ?? 0);
+  const standings = useRef<FinalStanding[] | undefined>(undefined); // the server's final table, with stats
 
   // Music plays while the table is open
   useEffect(() => {
@@ -159,10 +167,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     };
     const onDeadline = ({ playerId, at }: { playerId: string; at: number }) =>
       setDeadline({ playerId, at, total: Math.max(1, Math.round((at - Date.now()) / 1000)) });
-    const onAuto = ({ playerId }: { playerId: string }) => {
+    const onAuto = ({ playerId, fine }: { playerId: string; fine?: number }) => {
       const name = gameState.players.find((p) => p.id === playerId)?.name ?? 'A player';
-      toast.info(`${name} ran out of time, so the table played for them.`);
+      toast.info(`${name} ran out of time${fine ? ` and paid a $${fine} fine` : ''}, so the table played for them.`);
     };
+    const onEnded = (e: { standings: FinalStanding[] }) => (standings.current = e.standings);
+    const onEmoji = ({ username, emoji }: { username: string; emoji: string }) =>
+      toast(`${emoji}  ${username}`, { duration: 2000 });
     const onMessage = (m: ChatMessage) => setChat((prev) => [...prev, m].slice(-100));
     const onHistory = (m: ChatMessage[]) => setChat(m);
 
@@ -172,6 +183,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     onGameAutoplayed(onAuto);
     onChatMessage(onMessage);
     onChatHistory(onHistory);
+    onEmote(onEmoji);
+    onGameEnded(onEnded);
 
     return () => {
       removeListener('game:stateUpdate', onState);
@@ -180,6 +193,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       removeListener('game:autoplayed', onAuto);
       removeListener('chat:message', onMessage);
       removeListener('chat:history', onHistory);
+      removeListener('emote:show', onEmoji);
+      removeListener('game:ended', onEnded);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMultiplayer]);
@@ -188,13 +203,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   useEffect(() => {
     if (!gameState || !gameState.players) return;
 
-    const winner = checkWinCondition(gameState);
+    // Online quick games can also end on the clock: the server sends gameover with a winner
+    const winner = gameState.phase === 'gameover' ? gameState.winner : checkWinCondition(gameState);
     if (winner !== null) {
       const updatedState = { ...gameState, phase: 'gameover' as const, winner };
       setGameState(updatedState);
-      setTimeout(() => onGameOver(updatedState), 1000);
+      setTimeout(() => onGameOver(updatedState, standings.current), 1000);
     }
-  }, [gameState?.players, onGameOver]);
+  }, [gameState?.players, gameState?.phase, onGameOver]);
 
   // Sound follows what changed between two states, whoever caused it
   useEffect(() => {
@@ -448,6 +464,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </Button>
           )}
           <span className="font-display text-lg leading-none text-gold">{PRODUCT_NAME}</span>
+          {gameState.endsAt && <MatchClock endsAt={gameState.endsAt} />}
           <SoundMenu className="ml-auto" />
           <div className="flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
             <Pawn color={currentPlayer.color} name={currentPlayer.name} size={24} />
@@ -534,6 +551,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               </TabsContent>
             )}
           </Tabs>
+          {isMultiplayer && (
+            <div className="flex justify-between gap-1" role="group" aria-label="Reactions">
+              {EMOTES.map((emoji) => (
+                <Button key={emoji} variant="secondary" className="h-11 flex-1 text-lg" aria-label={`React ${emoji}`} onClick={() => sendEmote(emoji)}>
+                  {emoji}
+                </Button>
+              ))}
+            </div>
+          )}
         </aside>
       </main>
 
