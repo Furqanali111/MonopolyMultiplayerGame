@@ -162,10 +162,20 @@
     font-weight: 400;
   }
 
+  /* Board bezel: only outer shadows, so the grid and the pawn overlay keep their exact geometry */
   .brass-rule {
     box-shadow: inset 0 0 0 1px hsl(var(--gold) / 0.22);
   }
+  .board.brass-rule {
+    box-shadow: inset 0 0 0 1px hsl(var(--gold) / 0.22), 0 0 0 4px hsl(var(--ground)), 0 0 0 5px hsl(var(--gold) / 0.5),
+      0 0 0 9px hsl(var(--panel)), 0 0 0 10px hsl(var(--gold) / 0.18), 0 30px 70px -12px rgba(0, 0, 0, 0.75);
+  }
+  /* A lit lacquer tile: light falls from the top edge */
+  .board-tile {
+    background-image: linear-gradient(180deg, hsl(var(--bone) / 0.07), transparent 45%);
+  }
   .well {
+    background-image: radial-gradient(ellipse 70% 60% at 50% 38%, hsl(var(--felt) / 0.2), transparent 70%);
     background-color: hsl(var(--felt-well));
     box-shadow: inset 0 0 0 1px hsl(var(--felt-rim)), inset 0 0 0 4px hsl(var(--felt-well)),
       inset 0 0 0 5px hsl(var(--gold) / 0.28), inset 0 8px 24px rgba(0, 0, 0, 0.38);
