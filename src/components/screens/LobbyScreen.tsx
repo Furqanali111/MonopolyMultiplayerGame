@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Bot, Check, Copy, Crown, Link2, Loader2, LogOut, Play, Plus, Send, WifiOff, X } from 'lucide-react';
 import { QUICK_GAME } from '@/game/types';
+import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -226,6 +227,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
                   <Send /> WhatsApp
                 </a>
               </Button>
+            </div>
+            {/* White on purpose: scanners need contrast whatever the theme */}
+            <div className="mt-3 inline-block rounded-md bg-white p-2" role="img" aria-label="QR code for the invite link">
+              <QRCodeSVG value={inviteUrl(room.code)} size={112} />
             </div>
           </div>
 

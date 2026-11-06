@@ -41,7 +41,7 @@ import {
 import { DEFAULT_RULES, EMOTES, HouseRules, QUICK_GAME, sanitizeRules } from '../../src/game/types';
 import { addEventsToStats, finalStandings } from '../../src/game/stats';
 import { diffEvents } from '../../src/game/events';
-import { autoStep, whoMustAct } from '../../src/game/autopilot';
+import { autoStep, owesLateFine, whoMustAct } from '../../src/game/autopilot';
 import { CHANCE_CARDS, COMMUNITY_CHEST_CARDS, BOARD_TILES, PLAYER_COLORS as SEAT_COLORS } from '../../src/game/constants';
 
 const app = express();
@@ -127,11 +127,7 @@ function scheduleAuto(room: any) {
     const quick = !!room.gameState.rules?.quickGame;
     const humanMs = quick ? QUICK_GAME.turnSeconds * 1000 : TURN_MS;
     const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? BOT_MS * 2 : humanMs;
-    // Fined on a timeout, and again at the start of each later turn while the table plays for them.
-    // Not during bankruptcy: a fine there could tip a player over.
-    const gs = room.gameState;
-    const turnStart = gs.phase === 'playing' && (gs.turnPhase === 'roll' || gs.turnPhase === 'injail') && actor.doublesCount === 0;
-    const fine = quick && !actor.isAI && !away && gs.phase !== 'bankruptcy' && (!stoodIn || turnStart) ? QUICK_GAME.fine : 0;
+    const fine = !away && owesLateFine(room.gameState, actor, !!stoodIn) ? QUICK_GAME.fine : 0;
     if (!delay) return; // timer disabled and a connected human is acting
 
     if (!actor.isAI && !stoodIn && !away) {
