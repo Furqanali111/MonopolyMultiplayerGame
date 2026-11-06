@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { Studio } from '@/components/game/Studio';
 
 /**
  * Two dice. The server already rolled: these only show it, tumbling while `rolling`, then turning
@@ -29,7 +30,7 @@ export function faceUp(value: number): THREE.Quaternion {
   return new THREE.Quaternion().setFromAxisAngle(Z, rand(0, Math.PI * 2)).multiply(q);
 }
 
-const body = <meshStandardMaterial color="#f3efe4" roughness={0.35} />;
+const body = <meshPhysicalMaterial color="#f3efe4" roughness={0.3} clearcoat={0.6} clearcoatRoughness={0.2} />;
 const pip = <meshBasicMaterial color="#12151b" />;
 
 function Die({ x, value, rolling }: { x: number; value: number; rolling: boolean }) {
@@ -117,8 +118,9 @@ const Dice3D: React.FC<Dice3DProps> = ({ values, rolling }) => {
       gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }}
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
     >
-      <ambientLight intensity={1.2} />
-      <directionalLight position={[3, -4, 8]} intensity={2.2} />
+      <Studio lights={false} reflections={0.6} />
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[3, -4, 8]} intensity={2} color="#fff1d8" />
       <Die x={-0.62} value={a} rolling={rolling} />
       <Die x={0.62} value={b} rolling={rolling} />
     </Canvas>

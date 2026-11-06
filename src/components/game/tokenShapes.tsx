@@ -6,10 +6,10 @@ import * as THREE from 'three';
  * crown, sword, dragon egg, raven, throne and trident. Each stands on a dark base at z = 0, up is +z.
  * `m` is the player's colour material.
  */
-// Low metalness on purpose: with no environment map to reflect, real metal renders near black
-const STEEL = <meshStandardMaterial color="#e3e7ee" roughness={0.35} metalness={0.2} />;
-const IRON = <meshStandardMaterial color="#5a606e" roughness={0.5} metalness={0.2} />;
-const GOLD = <meshStandardMaterial color="#f0c25a" roughness={0.35} metalness={0.25} />;
+// Real metal: every scene that draws these mounts <Studio />, which supplies the reflections
+const STEEL = <meshStandardMaterial color="#e3e7ee" roughness={0.28} metalness={0.9} />;
+const IRON = <meshStandardMaterial color="#6a7080" roughness={0.42} metalness={0.75} />;
+const GOLD = <meshStandardMaterial color="#f0c25a" roughness={0.26} metalness={0.95} />;
 
 /** Pieces are modelled with y up, then turned so up is the board's +z. Stretched a little taller because the camera looks down at them. */
 const Upright: React.FC<{ children: React.ReactNode }> = ({ children }) => (

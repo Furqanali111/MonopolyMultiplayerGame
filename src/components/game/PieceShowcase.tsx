@@ -3,6 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SHAPES } from '@/components/game/tokenShapes';
 import { IsoRig } from '@/components/game/IsoRig';
+import { Studio, lacquer } from '@/components/game/Studio';
 
 /** The six pieces in a row on the home table: they rise in one by one, turn slowly, and lift when pointed at. */
 const GAP = 5.6;
@@ -30,7 +31,7 @@ function Piece({ index, color }: { index: number; color: string }) {
 
   return (
     <group ref={group} onPointerOver={() => (hovered.current = true)} onPointerOut={() => (hovered.current = false)}>
-      {SHAPES[index % SHAPES.length](<meshStandardMaterial color={color} roughness={0.38} metalness={0.15} />)}
+      {SHAPES[index % SHAPES.length](lacquer(color))}
     </group>
   );
 }
@@ -38,8 +39,7 @@ function Piece({ index, color }: { index: number; color: string }) {
 const PieceShowcase: React.FC<{ colors: readonly string[] }> = ({ colors }) => (
   <Canvas aria-hidden orthographic dpr={[1, 2]} gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }} style={{ position: 'absolute', inset: 0 }}>
     <IsoRig units={WIDTH_UNITS} lookAtZ={2} />
-    <ambientLight intensity={1.1} />
-    <directionalLight position={[-25, -20, 50]} intensity={2.4} />
+    <Studio />
     {colors.slice(0, 6).map((c, i) => (
       <Piece key={c} index={i} color={c} />
     ))}
