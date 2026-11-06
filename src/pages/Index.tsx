@@ -38,6 +38,7 @@ const Index = () => {
         if (inviteCode()) setScreen('lobby'); // already signed in: go straight to joining
         return;
       }
+      window.history.replaceState(null, '', window.location.pathname); // already seated: an old invite must not fire later
       setIsMultiplayer(true);
       if (res.room.state === 'playing' && res.room.gameState) {
         setOnlineGameState(res.room.gameState);

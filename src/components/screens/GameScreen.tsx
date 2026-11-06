@@ -74,8 +74,7 @@ import { DeedDialog } from '@/components/game/DeedDialog';
 import { GameLog } from '@/components/game/GameLog';
 import { ChatPanel } from '@/components/game/ChatPanel';
 import { MatchClock } from '@/components/game/MatchClock';
-
-const EMOTES = ['👏', '😂', '😡', '😎', '🤝', '💸'];
+import { EMOTES } from '@/game/types';
 import { CardDisplay } from '@/components/game/CardDisplay';
 import { Pawn } from '@/components/game/kit';
 import { ChipFlights } from '@/components/game/ChipFlights';

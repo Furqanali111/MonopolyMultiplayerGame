@@ -38,7 +38,7 @@ import {
     canMortgage,
     canUnmortgage,
 } from '../../src/game/engine';
-import { DEFAULT_RULES, HouseRules, QUICK_GAME, sanitizeRules } from '../../src/game/types';
+import { DEFAULT_RULES, EMOTES, HouseRules, QUICK_GAME, sanitizeRules } from '../../src/game/types';
 import { addEventsToStats, finalStandings } from '../../src/game/stats';
 import { diffEvents } from '../../src/game/events';
 import { autoStep, whoMustAct } from '../../src/game/autopilot';
@@ -127,8 +127,11 @@ function scheduleAuto(room: any) {
     const quick = !!room.gameState.rules?.quickGame;
     const humanMs = quick ? QUICK_GAME.turnSeconds * 1000 : TURN_MS;
     const delay = actor.isAI ? BOT_MS : away ? OFFLINE_TURN_MS : stoodIn ? BOT_MS * 2 : humanMs;
-    // shortcut: one fine per timeout; once the table plays for them (stoodIn) it is not repeated until they act again
-    const fine = quick && !actor.isAI && !stoodIn && !away ? QUICK_GAME.fine : 0;
+    // Fined on a timeout, and again at the start of each later turn while the table plays for them.
+    // Not during bankruptcy: a fine there could tip a player over.
+    const gs = room.gameState;
+    const turnStart = gs.phase === 'playing' && (gs.turnPhase === 'roll' || gs.turnPhase === 'injail') && actor.doublesCount === 0;
+    const fine = quick && !actor.isAI && !away && gs.phase !== 'bankruptcy' && (!stoodIn || turnStart) ? QUICK_GAME.fine : 0;
     if (!delay) return; // timer disabled and a connected human is acting
 
     if (!actor.isAI && !stoodIn && !away) {
@@ -522,7 +525,6 @@ io.on('connection', (socket) => {
     });
 
     // Emotes: a fixed set of reactions shown to the whole table, rate-limited like chat
-    const EMOTES = ['👏', '😂', '😡', '😎', '🤝', '💸'];
     socket.on('emote:send', ({ emoji }) => {
         const session = sessions.get(socket.id);
         const room = session?.roomCode && rooms.get(session.roomCode);

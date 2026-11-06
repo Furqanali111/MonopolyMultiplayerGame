@@ -10,7 +10,9 @@ export interface HouseRules {
 
 export const DEFAULT_RULES: HouseRules = { startingMoney: 1500, freeParkingPot: false };
 
-export const QUICK_GAME = { minutes: 20, turnSeconds: 40, fine: 50 };
+export const EMOTES = ['👏', '😂', '😡', '😎', '🤝', '💸'];
+
+export const QUICK_GAME ={ minutes: 20, turnSeconds: 40, fine: 50 };
 
 /** Clamp untrusted rule input from a client. */
 export function sanitizeRules(input: Partial<HouseRules> | undefined): HouseRules {
