@@ -143,10 +143,26 @@
   .tile-price {
     font-size: clamp(8px, 1.2cqw, 11px);
   }
+  .tile-short {
+    display: none;
+    font-size: 8px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
   @container (max-width: 520px) {
     .tile-name,
     .tile-price {
       display: none;
+    }
+    .tile-short {
+      display: block;
+    }
+    /* Top and bottom tiles are narrow but tall: run the name along the tall side */
+    .tile-short-v {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
     }
   }
   @container (max-width: 640px) {
