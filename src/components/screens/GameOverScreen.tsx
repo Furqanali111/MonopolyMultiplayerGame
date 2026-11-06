@@ -12,6 +12,7 @@ const WinnerPiece = lazy(() => import('@/components/game/WinnerPiece'));
 import { PLAYER_COLORS } from '@/game/constants';
 import { onRematch, requestRematch, removeListener, Room, type FinalStanding } from '@/services/socket';
 import { toast } from 'sonner';
+import { PRODUCT_NAME } from '@/lib/brand';
 import { Share2 } from 'lucide-react';
 
 interface GameOverScreenProps {
@@ -60,22 +61,52 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, winne
   const reduce = useReducedMotion();
   const standings = served ?? finalStandings(gameState, {});
 
-  // shortcut: shares a text summary; an image card would need canvas drawing
+  // Draws the result as a PNG. Canvas can't read CSS variables, so the colours are fixed here.
+  const drawCard = () => {
+    const c = document.createElement('canvas');
+    c.width = 900;
+    c.height = 230 + standings.length * 72;
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#16130e';
+    g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = winner.color;
+    g.fillRect(0, 0, 14, c.height);
+    g.fillStyle = '#f4ead5';
+    g.font = '700 56px Georgia, serif';
+    g.fillText(`${winner.name} wins`, 60, 100);
+    g.fillStyle = '#b9ad94';
+    g.font = '24px system-ui, sans-serif';
+    g.fillText(`${PRODUCT_NAME} · ${window.location.host}`, 60, 148);
+    standings.forEach((r, i) => {
+      const y = 215 + i * 72;
+      g.fillStyle = gameState.players.find((p) => p.id === r.playerId)?.color ?? '#888';
+      g.beginPath();
+      g.arc(78, y - 9, 18, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#f4ead5';
+      g.font = '600 30px system-ui, sans-serif';
+      g.textAlign = 'left';
+      g.fillText(`${i + 1}. ${r.name}`, 114, y);
+      g.textAlign = 'right';
+      g.fillText(r.isBankrupt ? 'bankrupt' : money(r.netWorth), c.width - 60, y);
+    });
+    return new Promise<Blob | null>((res) => c.toBlob(res, 'image/png'));
+  };
+
   const share = async () => {
-    const text = [
-      `${winner.name} won our Monopoly game!`,
-      ...standings.map((r, i) => `${i + 1}. ${r.name}: ${r.isBankrupt ? 'bankrupt' : money(r.netWorth)}`),
-      window.location.origin,
-    ].join('\n');
+    const blob = await drawCard();
+    if (!blob) return toast.error('Could not make the image.');
+    const file = new File([blob], 'monopoly-result.png', { type: 'image/png' });
     try {
-      if (navigator.share) await navigator.share({ text });
-      else {
-        await navigator.clipboard.writeText(text);
-        toast.success('Result copied');
-      }
+      if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], text: `${winner.name} won our game!` });
     } catch {
-      /* share sheet dismissed */
+      return; // share sheet dismissed
     }
+    const a = document.createElement('a'); // no share sheet (desktop): download it instead
+    a.href = URL.createObjectURL(blob);
+    a.download = file.name;
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   useEffect(() => {

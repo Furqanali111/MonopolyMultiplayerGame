@@ -31,6 +31,16 @@ import {
 } from './ai';
 import { JAIL_FINE } from './constants';
 
+/**
+ * Quick game: should this human be fined for being late? On a timeout, and again at the start of
+ * each later turn the table plays for them (`stoodIn`). Never while they are settling a debt.
+ */
+export function owesLateFine(state: GameState, actor: Player, stoodIn: boolean): boolean {
+  if (!state.rules?.quickGame || actor.isAI || state.phase === 'bankruptcy') return false;
+  const turnStart = state.phase === 'playing' && (state.turnPhase === 'roll' || state.turnPhase === 'injail') && actor.doublesCount === 0;
+  return !stoodIn || turnStart;
+}
+
 /** The one player who has to act right now (null if the game is over). */
 export function whoMustAct(state: GameState): Player | null {
   let id: string | undefined;

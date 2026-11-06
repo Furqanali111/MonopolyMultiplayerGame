@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { resumeSession, leaveRoom, Room, type FinalStanding } from '@/services/socket';
+import { connectSocket, resumeSession, leaveRoom, Room, type FinalStanding } from '@/services/socket';
 import { AIDifficulty, DEFAULT_RULES, GameState, HouseRules } from '@/game/types';
 import { HomeScreen } from '@/components/screens/HomeScreen';
 import { SetupScreen } from '@/components/screens/SetupScreen';
@@ -31,6 +31,7 @@ const Index = () => {
 
   // After a refresh, go back to the lobby or game we were in
   useEffect(() => {
+    if (inviteCode()) connectSocket(); // an invite skips Home, which is what normally opens the connection
     resumeSession().then((res) => {
       if (!res?.userId || !res.username) return;
       setCurrentUser({ id: res.userId, username: res.username });

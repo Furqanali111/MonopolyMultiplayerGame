@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { initializeGame } from './engine';
-import { autoStep, whoMustAct } from './autopilot';
+import { autoStep, whoMustAct, owesLateFine } from './autopilot';
 
 // Seeded random so a failure names a seed you can replay.
 const seeded = (seed: number) => () => {
@@ -11,6 +11,33 @@ const seeded = (seed: number) => () => {
 };
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('owesLateFine', () => {
+  const quick = () => {
+    const s = initializeGame(2, 'easy', { startingMoney: 1500, freeParkingPot: false, quickGame: true });
+    const human = { ...s.players[0], isAI: false };
+    return { s: { ...s, players: [human, s.players[1]] }, human };
+  };
+
+  it('fines a late human, but not in a normal game or a bot', () => {
+    const { s, human } = quick();
+    expect(owesLateFine(s, human, false)).toBe(true);
+    expect(owesLateFine({ ...s, rules: { ...s.rules!, quickGame: false } }, human, false)).toBe(false);
+    expect(owesLateFine(s, { ...human, isAI: true }, false)).toBe(false);
+  });
+
+  it('fines a stood-in player again only at the start of a turn', () => {
+    const { s, human } = quick();
+    expect(owesLateFine(s, human, true)).toBe(true); // turn start: roll phase, no doubles
+    expect(owesLateFine({ ...s, turnPhase: 'action' }, human, true)).toBe(false);
+    expect(owesLateFine(s, { ...human, doublesCount: 1 }, true)).toBe(false); // re-roll after doubles
+  });
+
+  it('never fines during bankruptcy', () => {
+    const { s, human } = quick();
+    expect(owesLateFine({ ...s, phase: 'bankruptcy' }, human, false)).toBe(false);
+  });
+});
 
 // Autopilot playing every seat must always make progress and finish the game.
 describe('autopilot', () => {
