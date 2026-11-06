@@ -454,7 +454,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const tabs: [string, string][] = [['players', 'Players'], ['log', 'Log'], ...(isMultiplayer ? [['chat', 'Chat'] as [string, string]] : [])];
 
   return (
-    <div className="min-h-dvh bg-background" onPointerDownCapture={(e) => (e.target as HTMLElement).closest?.('button') && play('tap')}>
+    // overflow-x-clip: the 3D piece layer reaches past the board edges and must not widen the page on phones
+    <div className="min-h-dvh overflow-x-clip bg-background" onPointerDownCapture={(e) => (e.target as HTMLElement).closest?.('button') && play('tap')}>
       <header className="sticky top-0 z-30 border-b border-border bg-background">
         <div className="mx-auto flex h-12 max-w-[1500px] items-center gap-2 px-3 md:px-4">
           {onBackToMenu && (
@@ -480,7 +481,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1500px] gap-3 p-3 md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+      <main className="mx-auto grid max-w-[1500px] gap-3 p-3 grid-cols-[minmax(0,1fr)] md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="mx-auto w-full" style={{ maxWidth: 'min(100%, calc(100dvh - 5.5rem))' }}>
           {/* The effects live inside the board so they lean with it */}
           <GameBoard gameState={gameState} onTileClick={setInspect} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
