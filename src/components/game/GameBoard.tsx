@@ -390,9 +390,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, onTileClick, ch
                 <span aria-hidden>·</span>
                 <span>{gameState.availableHotels} hotels left</span>
               </div>
-              {(gameState.rules?.freeParkingPot && (gameState.freeParkingPot ?? 0) > 0) && (
-                <div className="mt-1 text-[clamp(8px,1.3cqw,12px)] tabular-nums text-bone/80">
-                  Free Parking pot ${gameState.freeParkingPot!.toLocaleString()}
+              {gameState.rules?.freeParkingPot && (
+                <div className="relative z-20 mx-auto mt-1.5 w-fit rounded-full border border-gold/60 bg-black/70 px-[1.2cqw] py-[0.3cqw] text-[clamp(10px,2cqw,18px)] font-semibold tabular-nums text-gold">
+                  Free Parking pot ${(gameState.freeParkingPot ?? 0).toLocaleString()}
                 </div>
               )}
             </div>

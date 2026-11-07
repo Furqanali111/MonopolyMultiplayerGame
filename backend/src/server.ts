@@ -50,7 +50,8 @@ const httpServer = createServer(app);
 // Configure CORS
 const io = new Server(httpServer, {
     cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:8080',
+        // Dev: allow any origin so LAN friends (http://192.168.x.x:8080) can connect.
+        origin: process.env.NODE_ENV === 'production' ? (process.env.FRONTEND_URL || 'http://localhost:8080') : true,
         methods: ['GET', 'POST'],
         credentials: true,
     },
@@ -599,7 +600,7 @@ io.on('connection', (socket) => {
 
     type Ctx = { gs: any; me: any; current: any };
     type Rule = {
-        phase?: string;              // required gameState.phase (default 'playing')
+        phase?: string | string[];   // allowed gameState.phase (default 'playing')
         turnPhase?: string;          // required turnPhase
         currentOnly?: boolean;       // only the player whose turn it is
         who?: (c: Ctx) => number | undefined; // the one player allowed to act
@@ -617,7 +618,7 @@ io.on('connection', (socket) => {
             const reject = (message: string) => socket.emit('game:error', { message });
 
             if (!me || me.isBankrupt) return reject('You are not in this game');
-            if (gs.phase !== (rule.phase ?? 'playing')) return reject(`Not allowed during ${gs.phase}`);
+            if (![rule.phase ?? 'playing'].flat().includes(gs.phase)) return reject(`Not allowed during ${gs.phase}`);
             if (rule.currentOnly && c.current.id !== me.id) return reject('Not your turn');
             if (rule.turnPhase && gs.turnPhase !== rule.turnPhase) return reject(`Not allowed now (${gs.turnPhase})`);
             if (rule.who && rule.who(c) !== me.id) return reject('Not your decision');
@@ -649,9 +650,9 @@ io.on('connection', (socket) => {
     // Property management (current player, any point in their turn)
     game('game:buildHouse', { currentOnly: true }, ({ gs, me }, { position }) =>
         canBuildHouse(gs, me.id, position) ? buildHouse(gs, me.id, position) : null);
-    game('game:sellHouse', { currentOnly: true }, ({ gs, me }, { position }) =>
+    game('game:sellHouse', { phase: ['playing', 'bankruptcy'], currentOnly: true }, ({ gs, me }, { position }) =>
         canSellHouse(gs, me.id, position) ? sellHouse(gs, me.id, position) : null);
-    game('game:mortgage', { currentOnly: true }, ({ gs, me }, { position }) =>
+    game('game:mortgage', { phase: ['playing', 'bankruptcy'], currentOnly: true }, ({ gs, me }, { position }) =>
         canMortgage(gs, me.id, position) ? mortgageProperty(gs, me.id, position) : null);
     game('game:unmortgage', { currentOnly: true }, ({ gs, me }, { position }) =>
         canUnmortgage(gs, me.id, position) ? unmortgageProperty(gs, me.id, position) : null);

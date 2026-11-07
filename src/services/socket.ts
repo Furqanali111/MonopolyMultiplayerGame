@@ -20,7 +20,9 @@ const saveToken = (token?: string) => {
 
 // Backend URL - in production, connect to same origin (same port)
 // In development, connect to backend dev server
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || window.location.origin;
+// In dev, use the page's own hostname so friends on the LAN reach the host machine, not their own localhost.
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL
+    || (import.meta.env.DEV ? `${window.location.protocol}//${window.location.hostname}:3001` : window.location.origin);
 
 /**
  * Initialize Socket.IO connection

@@ -38,7 +38,7 @@ export const BankruptcyModal: React.FC<BankruptcyModalProps> = ({
 
   return (
     <Dialog open>
-      <DialogContent className="max-w-lg [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+      <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
         <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
           <Pawn color={player.color} name={player.name} size={26} />
           {canAct ? 'You owe more than you have' : `${player.name} is raising cash`}
@@ -72,7 +72,7 @@ export const BankruptcyModal: React.FC<BankruptcyModalProps> = ({
                   {sellable.map((o) => {
                     const prop = getPropertyData(o.position)!;
                     return (
-                      <Button key={o.position} size="sm" variant="outline" onClick={() => onSellHouse(o.position)}>
+                      <Button key={o.position} variant="outline" className="h-11 sm:h-9" onClick={() => onSellHouse(o.position)}>
                         <span className="h-3 w-1.5 rounded-[1px]" style={{ background: prop.color ? PROPERTY_HEX[prop.color] : '#6C7584' }} aria-hidden />
                         {prop.name} +${Math.floor(prop.houseCost! / 2)}
                       </Button>
@@ -88,7 +88,7 @@ export const BankruptcyModal: React.FC<BankruptcyModalProps> = ({
                   {mortgageable.map((o) => {
                     const prop = getPropertyData(o.position)!;
                     return (
-                      <Button key={o.position} size="sm" variant="outline" onClick={() => onMortgage(o.position)}>
+                      <Button key={o.position} variant="outline" className="h-11 sm:h-9" onClick={() => onMortgage(o.position)}>
                         <span className="h-3 w-1.5 rounded-[1px]" style={{ background: prop.color ? PROPERTY_HEX[prop.color] : '#6C7584' }} aria-hidden />
                         {prop.name} +${prop.mortgageValue}
                       </Button>

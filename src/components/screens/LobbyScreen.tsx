@@ -144,15 +144,33 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ currentUser, onBack, o
     }
   };
 
-  const copyInvite = () => {
-    if (!room?.code) return;
-    navigator.clipboard.writeText(inviteUrl(room.code));
-    toast.success('Invite link copied');
+  // navigator.clipboard only exists on https/localhost; on a LAN http page fall back to execCommand.
+  const copyText = async (text: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    }
   };
 
-  const copyRoomCode = () => {
+  const copyInvite = async () => {
     if (!room?.code) return;
-    navigator.clipboard.writeText(room.code);
+    const url = inviteUrl(room.code);
+    if (await copyText(url)) toast.success('Invite link copied');
+    else toast.error(`Copy failed. Share this link: ${url}`);
+  };
+
+  const copyRoomCode = async () => {
+    if (!room?.code) return;
+    if (!(await copyText(room.code))) { toast.error(`Copy failed. Room code: ${room.code}`); return; }
     setIsCopied(true);
     toast.success('Room code copied');
     setTimeout(() => setIsCopied(false), 1800);
