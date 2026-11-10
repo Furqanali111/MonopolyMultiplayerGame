@@ -3,7 +3,8 @@ import * as React from "react";
 const MOBILE_BREAKPOINT = 768;
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);
+  // Read the width on the first render (this app is client-only), so phones never draw the desktop layout first
+  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(() => window.innerWidth < MOBILE_BREAKPOINT);
 
   React.useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
