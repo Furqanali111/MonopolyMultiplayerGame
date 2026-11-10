@@ -42,7 +42,7 @@ interface ActionPanelProps {
 }
 
 const Primary: React.FC<React.ComponentProps<typeof Button>> = ({ className, ...props }) => (
-  <Button size="lg" className={cn('w-full', className)} {...props} />
+  <Button size="lg" className={cn('w-full max-md:w-auto max-md:min-w-[9rem] max-md:flex-1', className)} {...props} />
 );
 
 export const ActionPanel: React.FC<ActionPanelProps> = ({
@@ -171,9 +171,10 @@ export const ActionPanel: React.FC<ActionPanelProps> = ({
           disabled={!(phase === 'action' && !player.inJail && !!property && !owned)}
           className="block"
         >
-          <div className="space-y-2 px-3.5 pb-3 pt-3">
+          {/* Phones: the secondary buttons sit beside the primary one, so the bar stays short and the board keeps its size */}
+          <div className="space-y-2 px-3.5 pb-3 pt-3 max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-2 max-md:space-y-0">
             {primary}
-            <div className="flex flex-wrap gap-2 empty:hidden">
+            <div className="flex flex-wrap gap-2 empty:hidden max-md:contents">
               {secondary}
               {phase === 'endturn' && !player.inJail && gameState.phase === 'playing' && (
                 <Button variant="secondary" onClick={onTrade}>
@@ -186,12 +187,13 @@ export const ActionPanel: React.FC<ActionPanelProps> = ({
       )}
 
       {canAct && mine.length > 0 && gameState.phase === 'playing' && (
-        <details className="group border-t border-border">
+        <details className="group border-t border-border max-md:relative">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3.5 text-[13px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
             Manage deeds ({mine.length})
             <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
           </summary>
-          <ul className="max-h-64 divide-y divide-border overflow-y-auto border-t border-border">
+          {/* Phones: the list opens upward over the board, so the fixed screen never has to scroll */}
+          <ul className="max-h-64 divide-y divide-border overflow-y-auto border-t border-border max-md:absolute max-md:inset-x-0 max-md:bottom-full max-md:border max-md:bg-card max-md:shadow-lg">
             {mine.map((o) => {
               const prop = getPropertyData(o.position)!;
               const build = canBuildHouse(gameState, player.id, o.position);

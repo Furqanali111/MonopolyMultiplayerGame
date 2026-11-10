@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Home } from 'lucide-react';
+import { Home, Menu } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { dur, ease } from '@/lib/motion';
@@ -84,6 +84,9 @@ import { BoardFx, Fx } from '@/components/game/BoardFx';
 import { diffEvents } from '@/game/events';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { PlayerStrip } from '@/components/game/PlayerStrip';
+import { cn } from '@/lib/utils';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { SoundMenu } from '@/components/game/SoundMenu';
 import { play, playChange, rollSound, startMusic, stopMusic } from '@/services/sound';
@@ -459,20 +462,142 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const latest = gameState.gameLog[gameState.gameLog.length - 1];
   const tabs: [string, string][] = [['players', 'Players'], ['log', 'Log'], ...(isMultiplayer ? [['chat', 'Chat'] as [string, string]] : [])];
 
+  // Phones: players, log and chat live in a drawer; the header button shows a dot for unread chat
+  const [tab, setTab] = useState('players');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const lastMessage = chat[chat.length - 1];
+  const [seenMessage, setSeenMessage] = useState<ChatMessage>();
+  const openDrawer = (open: boolean) => {
+    setDrawerOpen(open);
+    setSeenMessage(lastMessage);
+  };
+
+  const board = (
+    // The effects live inside the board so they lean with it
+    <GameBoard gameState={gameState} onTileClick={onTile} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
+      <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
+      {peek !== null && (
+        // Floats above the event line so the dice and the decks do not move
+        <div className="absolute inset-x-0 bottom-[11%] z-10 flex justify-center">
+          <TilePeek
+            position={peek}
+            gameState={gameState}
+            onOpen={() => {
+              setInspect(peek);
+              setPeek(null);
+            }}
+          />
+        </div>
+      )}
+      <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
+        {latest}
+      </p>
+    </GameBoard>
+  );
+
+  const actions = (
+    <ActionPanel
+      gameState={gameState}
+      player={currentPlayer}
+      canAct={canAct}
+      isRolling={isRolling}
+      deadlineAt={myDeadline?.at}
+      deadlineTotal={myDeadline?.total}
+      onRoll={handleRollDice}
+      onBuyProperty={handleBuyProperty}
+      onDeclineProperty={handleDeclineProperty}
+      onBuildHouse={handleBuildHouse}
+      onSellHouse={handleSellHouse}
+      onMortgage={handleMortgage}
+      onUnmortgage={handleUnmortgage}
+      onPayJailFine={handlePayJailFine}
+      onUseJailCard={handleUseJailCard}
+      onRollForJail={handleRollForJail}
+      onEndTurn={handleEndTurn}
+      onTrade={() => {
+        setTradeSeed(null);
+        setShowTrade(true);
+      }}
+    />
+  );
+
+  const side = (
+    <>
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
+        <TabsList className="h-10 w-full justify-start gap-1 rounded-none border-b border-border bg-transparent p-0 max-md:h-11">
+          {tabs.map(([value, label]) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="h-10 rounded-none border-b-2 border-transparent px-3 text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:border-gold data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none max-md:h-11 max-md:px-4"
+            >
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="players" className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
+          {gameState.players.map((player, index) => (
+            <PlayerPanel
+              key={player.id}
+              player={player}
+              gameState={gameState}
+              isCurrentPlayer={index === gameState.currentPlayerIndex}
+              isYou={player.id === you?.id}
+              onPropertyClick={setInspect}
+            />
+          ))}
+        </TabsContent>
+        {/* The height caps are for tablets, where this sits in the page; the phone drawer and the desktop rail size it themselves */}
+        <TabsContent value="log" className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1 md:max-h-72 lg:max-h-none">
+          <GameLog logs={gameState.gameLog} />
+        </TabsContent>
+        {isMultiplayer && (
+          <TabsContent value="chat" className="mt-3 flex min-h-0 flex-1 flex-col md:max-h-80 lg:max-h-none">
+            <ChatPanel messages={chat} selfId={currentUserId} onSend={sendChat} className="min-h-0 flex-1" />
+          </TabsContent>
+        )}
+      </Tabs>
+      {isMultiplayer && (
+        <div className="flex justify-between gap-1" role="group" aria-label="Reactions">
+          {EMOTES.map((emoji) => (
+            <Button key={emoji} variant="secondary" className="h-11 flex-1 text-lg" aria-label={`React ${emoji}`} onClick={() => sendEmote(emoji)}>
+              {emoji}
+            </Button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
   return (
-    // overflow-x-clip: the 3D piece layer reaches past the board edges and must not widen the page on phones
-    <div className="min-h-dvh overflow-x-clip bg-background" onPointerDownCapture={(e) => (e.target as HTMLElement).closest?.('button') && play('tap')}>
-      <header className="sticky top-0 z-30 border-b border-border bg-background">
+    <div
+      // Phones get one fixed screen. Elsewhere the page scrolls, and overflow-x-clip stops the 3D piece layer,
+      // which reaches past the board edges, from widening it.
+      className={cn('bg-background', isMobile ? 'flex h-dvh flex-col overflow-hidden' : 'min-h-dvh overflow-x-clip')}
+      onPointerDownCapture={(e) => (e.target as HTMLElement).closest?.('button') && play('tap')}
+    >
+      <header className="sticky top-0 z-30 shrink-0 border-b border-border bg-background">
         <div className="mx-auto flex h-12 max-w-[1500px] items-center gap-2 px-3 md:px-4">
           {onBackToMenu && (
-            <Button variant="ghost" size="icon" aria-label="Leave the table" onClick={onBackToMenu} className="-ml-2">
+            <Button variant="ghost" size="icon" aria-label="Leave the table" onClick={onBackToMenu} className="-ml-2 max-md:h-11 max-md:w-11">
               <Home />
             </Button>
           )}
           <span className="font-display text-lg leading-none text-gold">{PRODUCT_NAME}</span>
           {gameState.endsAt && <MatchClock endsAt={gameState.endsAt} />}
-          <SoundMenu className="ml-auto" />
-          <div className="flex min-w-0 items-center gap-2.5 text-[13px]" aria-live="polite">
+          <SoundMenu className="ml-auto max-md:h-11 max-md:w-11" />
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={lastMessage !== seenMessage ? 'Players, log and chat, new messages' : isMultiplayer ? 'Players, log and chat' : 'Players and log'}
+            onClick={() => openDrawer(true)}
+            className="relative -mr-2 h-11 w-11 md:hidden"
+          >
+            <Menu />
+            {lastMessage !== seenMessage && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-gold" aria-hidden />}
+          </Button>
+          {/* Phones show whose turn it is in the player strip and the action bar; this stays for screen readers */}
+          <div className="flex min-w-0 items-center gap-2.5 text-[13px] max-md:sr-only" aria-live="polite">
             <Pawn color={currentPlayer.color} name={currentPlayer.name} size={24} />
             <motion.span
               key={`${currentPlayer.id}-${canAct}`}
@@ -487,100 +612,46 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </div>
       </header>
 
+      {isMobile ? (
+        <main className="flex min-h-0 flex-1 flex-col gap-2 p-2">
+          {/* The board takes the height the strip and the action bar leave, and stays square */}
+          <div className="flex min-h-0 flex-1 flex-col items-center" style={{ containerType: 'size' }}>
+            <div className="shrink-0" style={{ width: 'min(100cqw, 100cqh)' }}>
+              {board}
+            </div>
+            {/* Tall phones have room left under the board: the recent log fills it. Short phones have none, and it collapses. */}
+            <div className="min-h-0 w-full flex-1 overflow-y-auto px-1">
+              <GameLog logs={gameState.gameLog} className="pt-2" />
+            </div>
+          </div>
+          <PlayerStrip
+            players={gameState.players}
+            currentId={currentPlayer.id}
+            onOpen={() => {
+              setTab('players');
+              openDrawer(true);
+            }}
+          />
+          <div className="shrink-0">{actions}</div>
+          <Drawer open={drawerOpen} onOpenChange={openDrawer} shouldScaleBackground={false}>
+            <DrawerContent className="h-[80dvh] gap-3 px-3 pb-3" aria-describedby={undefined}>
+              <DrawerTitle className="sr-only">{isMultiplayer ? 'Players, log and chat' : 'Players and log'}</DrawerTitle>
+              {side}
+            </DrawerContent>
+          </Drawer>
+        </main>
+      ) : (
       <main className="mx-auto grid max-w-[1500px] gap-3 p-3 grid-cols-[minmax(0,1fr)] md:p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="mx-auto w-full" style={{ maxWidth: 'min(100%, calc(100dvh - 5.5rem))' }}>
-          {/* The effects live inside the board so they lean with it */}
-          <GameBoard gameState={gameState} onTileClick={onTile} overlay={<BoardFx fx={fx} onDone={() => setFx(null)} />}>
-            <Dice values={gameState.lastDiceRoll} isRolling={isRolling} />
-            {peek !== null && (
-              // Floats above the event line so the dice and the decks do not move
-              <div className="absolute inset-x-0 bottom-[11%] z-10 flex justify-center">
-                <TilePeek
-                  position={peek}
-                  gameState={gameState}
-                  onOpen={() => {
-                    setInspect(peek);
-                    setPeek(null);
-                  }}
-                />
-              </div>
-            )}
-            <p className="max-w-[88%] truncate text-center text-[clamp(10px,1.7cqw,15px)] text-bone/85" aria-live="polite">
-              {latest}
-            </p>
-          </GameBoard>
-          <p className="mt-2 text-center text-[12px] text-muted-foreground md:hidden">Tap any tile to see what it is.</p>
+          {board}
         </div>
 
         <aside className="flex min-h-0 flex-col gap-3 lg:sticky lg:top-[3.75rem] lg:max-h-[calc(100dvh-4.5rem)]">
-          <ActionPanel
-            gameState={gameState}
-            player={currentPlayer}
-            canAct={canAct}
-            isRolling={isRolling}
-            deadlineAt={myDeadline?.at}
-            deadlineTotal={myDeadline?.total}
-            onRoll={handleRollDice}
-            onBuyProperty={handleBuyProperty}
-            onDeclineProperty={handleDeclineProperty}
-            onBuildHouse={handleBuildHouse}
-            onSellHouse={handleSellHouse}
-            onMortgage={handleMortgage}
-            onUnmortgage={handleUnmortgage}
-            onPayJailFine={handlePayJailFine}
-            onUseJailCard={handleUseJailCard}
-            onRollForJail={handleRollForJail}
-            onEndTurn={handleEndTurn}
-            onTrade={() => {
-              setTradeSeed(null);
-              setShowTrade(true);
-            }}
-          />
-
-          <Tabs defaultValue="players" className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="h-10 w-full justify-start gap-1 rounded-none border-b border-border bg-transparent p-0">
-              {tabs.map(([value, label]) => (
-                <TabsTrigger
-                  key={value}
-                  value={value}
-                  className="h-10 rounded-none border-b-2 border-transparent px-3 text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:border-gold data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                >
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <TabsContent value="players" className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
-              {gameState.players.map((player, index) => (
-                <PlayerPanel
-                  key={player.id}
-                  player={player}
-                  gameState={gameState}
-                  isCurrentPlayer={index === gameState.currentPlayerIndex}
-                  isYou={player.id === you?.id}
-                  onPropertyClick={setInspect}
-                />
-              ))}
-            </TabsContent>
-            <TabsContent value="log" className="mt-3 max-h-72 min-h-0 flex-1 overflow-y-auto pr-1 lg:max-h-none">
-              <GameLog logs={gameState.gameLog} />
-            </TabsContent>
-            {isMultiplayer && (
-              <TabsContent value="chat" className="mt-3 flex max-h-80 min-h-0 flex-1 flex-col lg:max-h-none">
-                <ChatPanel messages={chat} selfId={currentUserId} onSend={sendChat} className="min-h-0 flex-1" />
-              </TabsContent>
-            )}
-          </Tabs>
-          {isMultiplayer && (
-            <div className="flex justify-between gap-1" role="group" aria-label="Reactions">
-              {EMOTES.map((emoji) => (
-                <Button key={emoji} variant="secondary" className="h-11 flex-1 text-lg" aria-label={`React ${emoji}`} onClick={() => sendEmote(emoji)}>
-                  {emoji}
-                </Button>
-              ))}
-            </div>
-          )}
+          {actions}
+          {side}
         </aside>
       </main>
+      )}
 
       <ChipFlights players={gameState.players} pot={gameState.freeParkingPot ?? 0} />
       <DeedDialog
