@@ -4,6 +4,7 @@ import type { ChatMessage } from '@/services/socket';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { useReducedMotion } from 'motion/react';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -15,10 +16,11 @@ interface ChatPanelProps {
 export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, selfId, onSend, className }) => {
   const [text, setText] = useState('');
   const endRef = useRef<HTMLLIElement>(null);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [messages.length]);
+    endRef.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [messages.length, reduce]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
