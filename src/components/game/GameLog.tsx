@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { useReducedMotion } from 'motion/react';
 
 interface GameLogProps {
   logs: string[];
@@ -9,10 +10,11 @@ interface GameLogProps {
 /** The running record of the table. The newest line is brightest. */
 export const GameLog: React.FC<GameLogProps> = ({ logs, className }) => {
   const endRef = useRef<HTMLLIElement>(null);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [logs.length]);
+    endRef.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [logs.length, reduce]);
 
   const shown = logs.slice(-80);
 
