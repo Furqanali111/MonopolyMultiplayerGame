@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: monopoly
+    runtime: node
+    plan: free
+    buildCommand: npm install && cd backend && npm install && npm run build
+    startCommand: cd backend && npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22
