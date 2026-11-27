@@ -80,6 +80,7 @@ export function initializeGame(aiCount: number, aiDifficulty: AIDifficulty, rule
     currentCard: null,
     auction: null,
     trade: null,
+    tradeSeed: Math.random(),
     bankruptcyState: null,
     winner: null,
     gameLog: ['Game started! Roll the dice to begin.'],

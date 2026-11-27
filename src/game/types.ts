@@ -96,6 +96,7 @@ export interface GameState {
   trade: TradeOffer | null;
   bankruptcyState: BankruptcyState | null;
   winner: PlayerId | null;
+  tradeSeed?: number; // fixes each bot's hidden asking-price mood for this game
   endsAt?: number; // quick game: epoch ms when the richest player wins
   preAuctionPlayerIndex?: number;
   gameLog: string[];

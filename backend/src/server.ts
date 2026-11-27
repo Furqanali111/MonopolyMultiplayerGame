@@ -264,6 +264,7 @@ function initializeMultiplayerGame(roomPlayers: any[], rules: HouseRules) {
         currentCard: null,
         auction: null,
         trade: null,
+        tradeSeed: Math.random(),
         bankruptcyState: null,
         winner: null,
         gameLog: ['Game started! Roll the dice to begin.'],
