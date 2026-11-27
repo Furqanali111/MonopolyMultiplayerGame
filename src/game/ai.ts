@@ -319,60 +319,92 @@ export function shouldAIRaiseMoney(state: GameState, player: Player, minCashNeed
   };
 }
 
+// Below this the AI sells cheaper. The same factor is the gap between what it pays and what it asks,
+// so selling it a tile and buying it back never makes money.
+const LOW_CASH = 200;
+const LOW_CASH_FACTOR = 0.85;
+
+// Hidden mood, up to 15% either way, fixed per game, bot and tile so offers cannot be probed
+function mood(state: GameState, playerId: PlayerId, position: number): number {
+  if (!state.tradeSeed) return 1;
+  const id = [...playerId].reduce((h, c) => h * 31 + c.charCodeAt(0), 7) % 9973; // ids are uuids online
+  const x = Math.sin(state.tradeSeed * 1e4 + id + position * 13) * 1e4;
+  return 0.85 + (x - Math.floor(x)) * 0.3;
+}
+
+/** What the pending trade costs `player` (give) and brings them (get), in dollars. */
+function tradeValues(state: GameState, player: Player, trade: Omit<TradeOffer, 'active'>) {
+  const from = state.players.find(p => p.id === trade.fromPlayer)!;
+  const smart = player.difficulty !== 'easy';
+  const { requestedProperties: out, offeredProperties: into } = trade;
+
+  const mine = new Set(getPlayerProperties(state, player.id).map(p => p.position));
+  const theirs = new Set(getPlayerProperties(state, from.id).map(p => p.position));
+  const mineAfter = new Set([...mine].filter(p => !out.includes(p)).concat(into));
+  const theirsAfter = new Set([...theirs].filter(p => !into.includes(p)).concat(out));
+
+  const groupOf = (pos: number) => getPropertyData(pos)!.colorGroup!;
+  const full = (set: Set<number>, pos: number) => groupOf(pos).every(p => set.has(p));
+  const count = (set: Set<number>, pos: number) => groupOf(pos).filter(p => set.has(p)).length;
+  const isStreet = (pos: number) => getPropertyData(pos)!.type === 'property';
+  // Railroads and utilities: 1.3x for one, rising to 2.5x for the whole group
+  const lineScale = (n: number, pos: number) => 1.3 + (Math.max(n, 1) - 1) * (1.2 / (groupOf(pos).length - 1));
+
+  // Both sides end up with a new colour set: no big premium for completing theirs
+  const fairSwap = smart
+    && into.some(p => isStreet(p) && full(mineAfter, p))
+    && out.some(p => isStreet(p) && full(theirsAfter, p));
+
+  const asking = (pos: number) => {
+    const property = getPropertyData(pos)!;
+    const completes = full(theirsAfter, pos);
+    let m = 1.3;
+    if (smart && !isStreet(pos)) {
+      m = lineScale(Math.max(count(mine, pos), count(theirsAfter, pos)), pos);
+    } else {
+      if (smart && count(theirsAfter, pos) > 1) m = 1.6;
+      if (smart && count(mine, pos) > 1) m = 1.8;
+      if (completes) m = fairSwap ? 1.2 : smart ? 3 : 2;
+      if (full(mine, pos)) m = smart ? 4 : 2.5;
+      if (smart) {
+        const cashAfter = from.money - trade.offeredMoney + trade.requestedMoney;
+        if (completes && !fairSwap && cashAfter >= property.houseCost! * groupOf(pos).length) m += 0.5;
+        if (property.color === 'orange' || property.color === 'red') m += 0.2;
+      }
+    }
+    const cash = smart && player.money < LOW_CASH ? LOW_CASH_FACTOR : 1;
+    return property.price * Math.max(1.1, m * cash * mood(state, player.id, pos));
+  };
+
+  const receiving = (pos: number) => {
+    const property = getPropertyData(pos)!;
+    let m = 1;
+    if (smart && !isStreet(pos)) {
+      if (count(mineAfter, pos) > 1) m = lineScale(count(mineAfter, pos), pos);
+    } else {
+      if (smart && count(mineAfter, pos) > 1) m = 1.8;
+      if (full(mineAfter, pos)) {
+        if (fairSwap) return property.price * 1.2 * mood(state, player.id, pos);
+        m = smart ? 3 : 2;
+      }
+    }
+    return property.price * m * LOW_CASH_FACTOR * mood(state, player.id, pos);
+  };
+
+  const sum = (positions: number[], value: (pos: number) => number) => positions.reduce((t, p) => t + value(p), 0);
+  return {
+    give: sum(out, asking) + trade.requestedMoney + trade.requestedCards * 50, // jail cards are worth $50
+    get: sum(into, receiving) + trade.offeredMoney + trade.offeredCards * 50,
+  };
+}
+
 // Determine if AI should accept a trade offer
 export function shouldAIAcceptTrade(state: GameState, player: Player): boolean {
   const trade = state.trade;
   if (!trade || trade.toPlayer !== player.id) return false;
-
-  const difficulty = player.difficulty || 'easy';
-
-  // Easy AI only compares sticker prices; medium and hard also weigh monopolies
-  const smart = difficulty !== 'easy';
-  const fromPlayer = state.players.find(p => p.id === trade.fromPlayer);
-  if (!fromPlayer) return false;
-
-  let myValue = 0;
-  let theirValue = 0;
-
-  // Calculate value of what I'm giving up
-  trade.requestedProperties.forEach(pos => {
-    const prop = getPropertyData(pos);
-    if (prop) {
-      myValue += prop.price;
-      // Extra value if I have monopoly
-      if (smart && hasMonopoly(state, player.id, pos)) {
-        myValue += prop.price * 0.5; // 50% premium for breaking monopoly
-      }
-    }
-  });
-  myValue += trade.requestedMoney;
-  myValue += trade.requestedCards * 50; // Value jail cards at $50
-
-  // Calculate value of what I'm getting
-  trade.offeredProperties.forEach(pos => {
-    const prop = getPropertyData(pos);
-    if (prop) {
-      theirValue += prop.price;
-      
-      // Check if this would complete a monopoly for me
-      if (smart && prop.colorGroup) {
-        const wouldComplete = prop.colorGroup.every(groupPos => {
-          if (groupPos === pos) return true;
-          const owned = state.ownedProperties.find(p => p.position === groupPos);
-          return owned && owned.ownerId === player.id;
-        });
-        
-        if (wouldComplete) {
-          theirValue += prop.price; // 100% premium for completing monopoly
-        }
-      }
-    }
-  });
-  theirValue += trade.offeredMoney;
-  theirValue += trade.offeredCards * 50;
-
-  // Accept if we're getting at least 90% fair value or completing a monopoly
-  return theirValue >= myValue * (smart ? 0.9 : 1);
+  if (!state.players.some(p => p.id === trade.fromPlayer)) return false;
+  const { give, get } = tradeValues(state, player, trade);
+  return get >= give;
 }
 
 // Process full AI turn decision
@@ -445,9 +477,12 @@ export function getAITradeOffer(state: GameState, player: Player): Omit<TradeOff
     const tradable = owned.every(o => o && o.ownerId === ownerId && !o.isMortgaged && o.houses === 0);
     if (!tradable || ownerId === player.id) continue;
 
-    const price = Math.round(missing.reduce((sum, pos) => sum + (getPropertyData(pos)?.price ?? 0), 0) * 1.6);
+    // Offer what a bot in the owner's seat would accept, so bot-to-bot deals still close
+    const owner = state.players.find(p => p.id === ownerId)!;
+    const draft = { fromPlayer: player.id, toPlayer: owner.id, offeredProperties: [], offeredMoney: 0, offeredCards: 0, requestedProperties: missing, requestedMoney: 0, requestedCards: 0 };
+    const price = Math.ceil(tradeValues(state, { ...owner, difficulty: owner.difficulty ?? player.difficulty }, draft).give);
     if (price > player.money - 100) continue;
-    if (!best || missing.length < best.missing.length) best = { missing, ownerId: ownerId!, price };
+    if (!best || missing.length < best.missing.length) best = { missing, ownerId: owner.id, price };
   }
 
   return best && {
